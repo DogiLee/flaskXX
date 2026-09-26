@@ -1,0 +1,12 @@
+{
+  "redirectedLogin": {
+    "rejected": true,
+    "expected": "Reject non-JSON/redirected login response"
+  },
+  "turkishSearch": {
+    "indexed": "test verisi",
+    "query": "test verisi",
+    "matches": true,
+    "expected": true
+  }
+}

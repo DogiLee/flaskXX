@@ -1,0 +1,1 @@
+Frontend contract: HTML/401 rejection, valid JSON, Turkish/Unicode search PASS

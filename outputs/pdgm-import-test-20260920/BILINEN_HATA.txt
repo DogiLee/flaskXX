@@ -1,0 +1,32 @@
+GÜNCEL DURUM — 22.09.2026: BU HATA DÜZELTİLDİ.
+B01 artık başarılı import senaryosudur: gerçek Excel COM aktarımı "001" ve
+"1" kimliklerini ayrı tutuyor. DOGRULAMA_COM.txt güncel sonucu içerir.
+Aşağıdaki metin 20.09.2026 tarihli tarihsel hata kanıtıdır; güncel davranış değildir.
+Güncel kapsamlı rapor: ../audit-fixes-20260922/DUZELTME_RAPORU.md
+
+BAŞTAKİ SIFIRLARIN KAYBI — TARİHSEL KAYIT
+
+Dosya: B01_BASTAKI_SIFIR_COM_HATASI.xlsx
+Hücreler: MAKİNE!A35 = metin "001", MAKİNE!A36 = metin "1".
+İstenen davranış: Sayfa içinde iki farklı, kalıcı kaynak kimliği olarak kabul.
+Gözlenen davranış: Gerçek Microsoft Excel importu "Tekrarlanan kaynak kimliği NO:1" hatasıyla reddediyor.
+
+Kaynak dosyayı doğrudan okuyan parser iki kimliği ayrı tutuyor. Sorun COM
+snapshot aşamasında oluşuyor. excel_araclari.py:183 değerleri yeni çalışma
+kitabındaki General biçimli hedefe Value2 ile yazıyor. Kaynaktaki metin
+biçimi taşınmadığı için Excel sayısal görünen kimlikleri sayıya dönüştürüyor.
+
+Bu dosya bir veri doğrulama hatası örneği değildir. Mevcut uygulamadaki
+istenmeyen davranışı yeniden üretmek için hazırlanmıştır. Ana senaryolarda
+N001 ve N1 kullanıldığı için bu hata diğer testleri engellemez.
+
+Uygulama kodunda bu çalışma kapsamında değişiklik yapılmadı.
+Kontroller yalnız geçici test verisinde çalıştırıldı.
+
+KAPSAM
+İçe aktarım, kimlik koruma, durum/tarih güncellemesi, kısmi üretim/not
+koruma, pasifleştirme, ret sonrası veri bütünlüğü ve yeniden okuma otomatik
+doğrulandı. Ekran, rol, filtre, monitor, yedek geri yükleme ve güvenlik
+adımları TEST REHBERİ sekmesindeki manuel kontrol listesidir.
+Bir import Excel'i tek başına tarayıcı davranışlarını veya bütün güvenlik
+senaryolarını otomatik test etmez.

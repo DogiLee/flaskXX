@@ -1,0 +1,115 @@
+PDGM — Ortak Test Senaryoları (örnek Excel formatı)
+===================================================
+MAKİNE sayfası: Downloads/ornek_uretim_takip_random.xlsx ile aynı kolon düzeni
+  Talep NO | Talep Sahibi | Kart Stok No | Kart Üretim Adet | Planlanan Başlangıç T.
+  | Dizgi Başlama Tarihi | Planlanan Teslim T. | Gerçekleşen Teslim T. | DURUM | PCB | | NOT
+
+EÜM sayfası: Downloads/EUM_Uretim_Takip.xlsx ile aynı kolon düzeni
+  NO | Talep NO | Talep Sahibi | Revizyon | Kart Stok No | Kart Üretim Adet
+  | Planlanan Başlangıç T. | Planlanan Teslim T. | Gerçekleşen Teslim T. | DURUM | MALZEME/PCB
+
+Dosyalar:
+  1) PDGM_TEST_INPUT.xlsx
+  2) PDGM_TEST_INPUT_FAZ2_yeniden_import.xlsx
+  3) PDGM_TEST_INPUT_CONFLICT_iptal.xlsx
+
+NOT: Import için sayfa adı 'MAKİNE' olmalı (örnek dosyadaki 'ÜRETİM TAKİP' değil).
+     Opsiyonel sayfalar: 'ELDE DİZGİ', 'EÜM'.
+
+
+FAZ 0 — Giriş
+-------------
+[ ] admin / operator (makine) / elle / eum / gozlemci
+    eum1 / eum123  →  operator_tipi=eum_dizgi
+
+
+FAZ 1 — İlk yükleme (PDGM_TEST_INPUT.xlsx)
+-----------------------------------------
+Beklenen: ~34 örnek satır + birkaç edge + ELDE satırları + EÜM satırları
+Uyarılar normal: DURUM boş satırlar, edge testler, çoklu parti, PDGM ÖNERİ
+
+Öne çıkan kartlar:
+
+Talep     | Stok         | Durum        | Ne test edilir
+----------|--------------|--------------|---------------------------
+1634701   | AD-5155-3484 | PLANA ALINDI | Dizgiye Al mutlu yol (200 ADET)
+1674905   | AD-4040-9198 | PLANA ALINDI | İkinci plana kartı
+1745738   | AD-2664-6066 | DİZGİDE      | Kısmi Adet Bitir (25, PCB=VAR)
+1637435   | AD-8751-4011 | DİZGİDE      | İkinci dizgi kartı
+1658369   | AD-4012-3658 | TESLİM       | Teslim listesi / özet KPI
+1704286   | AD-2646-8838 | (boş)        | Admin durum ata
+1658369   | AD-4012-3658 | PLANA (#tarih)| Çoklu parti (42. hafta satırı)
+1999001   | AD-9999-0001 | HAZIR        | Operatörde GÖRÜNMEZ
+1999002   | AD-9999-0002 | BEKLEMEDE    | Durum eksik
+1999003   | AD-9999-0003 | TESLİM/tarih yok | Uyarı → durum eksik
+
+Elle:
+1900101 EL-2201-1101  DİZGİ İÇİN BEKLİYOR → PLANA
+1900102 EL-2201-1102  MALZEME TEDARİK → eksik + malzeme_bekliyor
+1900103 EL-2201-1103  DİZGİDE + malzeme
+1900104 EL-2201-1104  DİZGİDE normal
+
+EÜM (örnek + test; dizgi_tipi = EÜM'de Dizgi):
+2773908 AD-9999-0000  TESLİM EDİLDİ          (örnek veri)
+2773909 AD-9999-0001  TESLİM EDİLDİ          (örnek veri)
+2773910 AD-9999-0002  TESLİM EDİLDİ          (örnek veri)
+2773911 AD-9999-0003  TESLİM EDİLDİ          (örnek veri)
+2800101 EU-3301-2001  ÜRETİM PLANA ALINDI → PLANA
+2800102 EU-3301-2002  ÜRETİM DEVAM EDİYOR → DİZGİDE
+2800103 EU-3301-2003  EMTD PLANLANDI → PLANA
+2800104 EU-3301-2004  PDGM ÖNERİ → durum eksik (admin ata)
+2800105 EU-3301-2005  ÜRETİM DEVAM EDİYOR → DİZGİDE
+2800106 EU-3301-2006  TESLİM EDİLDİ
+
+
+FAZ 1b — Operatör
+-----------------
+Makine hesabı:
+[ ] 1634701 Dizgiye Al
+[ ] 1745738 Adet Bitir (örn. 10) → not ekle (tarihli)
+[ ] Elle / EÜM kartta işlem YAPAMAZ
+
+Elle hesabı:
+[ ] 1900101 / 1900104 işlem yapabilir
+[ ] Makine / EÜM kartında işlem YAPAMAZ
+[ ] 1900102 malzeme onayı
+
+EÜM hesabı (eum1):
+[ ] 2800101 Dizgiye Al
+[ ] 2800102 Adet Bitir
+[ ] Makine / Elle kartında işlem YAPAMAZ
+[ ] Rozet: EÜM'de Dizgi
+[ ] Pano filtresi "EÜM'de Dizgi" yalnız bu kartları gösterir
+
+
+FAZ 1c — Notlar
+---------------
+[ ] Aynı karta iki kullanıcı not eklesin → iki tarihli satır görünsün
+
+
+FAZ 2 — Yeniden import
+----------------------
+[ ] 1745738 PCB güncellenir, durum/adet korunur
+[ ] 1999100 yeni kart eklenir
+[ ] FAZ1'de olup FAZ2'de olmayanlar → kaynakta yok
+[ ] Edge HAZIR (1999001) pasife düşer
+[ ] EÜM 2800102 PCB → PCB-E2-GUNCELLENDI
+[ ] EÜM 2800199 yeni kart eklenir
+[ ] EÜM 2800106 FAZ2'de yok → kaynakta yok
+
+
+FAZ 2b — Conflict
+-----------------
+1658369 TESLİM (6 adet) iken CONFLICT dosyası (99 ADET):
+[ ] Tüm import iptal
+[ ] Diğer kartlar değişmez
+
+
+FAZ 3 — Yönetim / yedek / rapor
+------------------------------
+[ ] Durum ata (1704286)
+[ ] Admin filtre: EÜM'de Dizgi
+[ ] Manuel kart ekle → Dizgi Tipi = EÜM'de Dizgi
+[ ] Gizle / geri getir
+[ ] Yedek al / geri yükle
+[ ] Rapor Excel'de Dizgi Tipi kolonu EÜM'DE DİZGİ gösterir

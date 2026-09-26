@@ -1,0 +1,217 @@
+test_1904_numeric_dates (test_excel_sync.SyncTests.test_1904_numeric_dates) ... FAIL
+test_actual_date_clear_and_change (test_excel_sync.SyncTests.test_actual_date_clear_and_change) ... FAIL
+test_blank_or_invalid_status_preserves_manual_progress_notes (test_excel_sync.SyncTests.test_blank_or_invalid_status_preserves_manual_progress_notes) ... ok
+test_delete_only_one_duplicate_and_disallow_operation (test_excel_sync.SyncTests.test_delete_only_one_duplicate_and_disallow_operation) ... FAIL
+test_duplicate_date_change_keeps_identity (test_excel_sync.SyncTests.test_duplicate_date_change_keeps_identity) ... FAIL
+test_eum_existing_planned_start_header (test_excel_sync.SyncTests.test_eum_existing_planned_start_header) ... FAIL
+test_eum_planned_date_monday (test_excel_sync.SyncTests.test_eum_planned_date_monday) ... 
+  test_eum_planned_date_monday (test_excel_sync.SyncTests.test_eum_planned_date_monday) (value='17.09.2026') ... FAIL
+  test_eum_planned_date_monday (test_excel_sync.SyncTests.test_eum_planned_date_monday) (value='20.09.2026') ... FAIL
+  test_eum_planned_date_monday (test_excel_sync.SyncTests.test_eum_planned_date_monday) (value='21.09.2026') ... FAIL
+  test_eum_planned_date_monday (test_excel_sync.SyncTests.test_eum_planned_date_monday) (value='01.01.2026') ... FAIL
+  test_eum_planned_date_monday (test_excel_sync.SyncTests.test_eum_planned_date_monday) (value=datetime.datetime(2026, 9, 17, 23, 59)) ... FAIL
+  test_eum_planned_date_monday (test_excel_sync.SyncTests.test_eum_planned_date_monday) (value=46282.0) ... FAIL
+test_machine_hand_and_eum_same_no_independent (test_excel_sync.SyncTests.test_machine_hand_and_eum_same_no_independent) ... FAIL
+test_manual_card_not_hijacked (test_excel_sync.SyncTests.test_manual_card_not_hijacked) ... FAIL
+test_missing_or_duplicate_no_rejects_without_changes (test_excel_sync.SyncTests.test_missing_or_duplicate_no_rejects_without_changes) ... FAIL
+test_replace_failure_rolls_back_memory_and_disk (test_excel_sync.SyncTests.test_replace_failure_rolls_back_memory_and_disk) ... ok
+test_restart_preserves_source_identity_and_deletion (test_excel_sync.SyncTests.test_restart_preserves_source_identity_and_deletion) ... FAIL
+test_same_upload_idempotent (test_excel_sync.SyncTests.test_same_upload_idempotent) ... ok
+test_start_date_change_keeps_identity (test_excel_sync.SyncTests.test_start_date_change_keeps_identity) ... FAIL
+test_status_sequence_including_delivered_without_date (test_excel_sync.SyncTests.test_status_sequence_including_delivered_without_date) ... FAIL
+test_three_rows_reorder_insert_delete (test_excel_sync.SyncTests.test_three_rows_reorder_insert_delete) ... FAIL
+test_valid_empty_source_deactivates_all (test_excel_sync.SyncTests.test_valid_empty_source_deactivates_all) ... ERROR
+
+======================================================================
+ERROR: test_valid_empty_source_deactivates_all (test_excel_sync.SyncTests.test_valid_empty_source_deactivates_all)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_excel_sync.py", line 182, in test_valid_empty_source_deactivates_all
+    self.upload({'MAK�NE':[row(1)]}); self.upload({'MAK�NE':[]})
+                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_excel_sync.py", line 58, in upload
+    return ex.excelden_aktar(str(path), 'tester')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\excel_araclari.py", line 600, in excelden_aktar
+    return _excelden_aktar(dosya_yolu, kullanici)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\excel_araclari.py", line 639, in _excelden_aktar
+    raise ExcelAktarimHatasi("Excel'de i�lenecek kart sat�r� bulunamad�.")
+excel_araclari.ExcelAktarimHatasi: Excel'de i�lenecek kart sat�r� bulunamad�.
+
+======================================================================
+FAIL: test_1904_numeric_dates (test_excel_sync.SyncTests.test_1904_numeric_dates)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_excel_sync.py", line 172, in test_1904_numeric_dates
+    self.assertEqual(self.cards()[1]['plan_baslama'],'2026-09-14')
+AssertionError: None != '2026-09-14'
+
+======================================================================
+FAIL: test_actual_date_clear_and_change (test_excel_sync.SyncTests.test_actual_date_clear_and_change)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_excel_sync.py", line 101, in test_actual_date_clear_and_change
+    self.assertEqual(self.cards()[1]['gerceklesen_teslim'],value)
+AssertionError: '2026-09-19' != None
+
+======================================================================
+FAIL: test_delete_only_one_duplicate_and_disallow_operation (test_excel_sync.SyncTests.test_delete_only_one_duplicate_and_disallow_operation)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_excel_sync.py", line 107, in test_delete_only_one_duplicate_and_disallow_operation
+    self.assertEqual([k['sira'] for k in depo.kartlari_getir()],[2])
+AssertionError: Lists differ: [2, 2] != [2]
+
+First list contains 1 additional elements.
+First extra element 1:
+2
+
+- [2, 2]
++ [2]
+
+======================================================================
+FAIL: test_duplicate_date_change_keeps_identity (test_excel_sync.SyncTests.test_duplicate_date_change_keeps_identity)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_excel_sync.py", line 76, in test_duplicate_date_change_keeps_identity
+    self.assertEqual(len(depo._kartlar), 2)
+AssertionError: 3 != 2
+
+======================================================================
+FAIL: test_eum_existing_planned_start_header (test_excel_sync.SyncTests.test_eum_existing_planned_start_header)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_excel_sync.py", line 167, in test_eum_existing_planned_start_header
+    self.assertEqual(self.cards()[1]['plan_baslama'],'2026-09-14')
+AssertionError: None != '2026-09-14'
+
+======================================================================
+FAIL: test_eum_planned_date_monday (test_excel_sync.SyncTests.test_eum_planned_date_monday) (value='17.09.2026')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_excel_sync.py", line 161, in test_eum_planned_date_monday
+    self.assertEqual(self.cards()[1]['plan_baslama'],want)
+AssertionError: None != '2026-09-14'
+
+======================================================================
+FAIL: test_eum_planned_date_monday (test_excel_sync.SyncTests.test_eum_planned_date_monday) (value='20.09.2026')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_excel_sync.py", line 161, in test_eum_planned_date_monday
+    self.assertEqual(self.cards()[1]['plan_baslama'],want)
+AssertionError: None != '2026-09-14'
+
+======================================================================
+FAIL: test_eum_planned_date_monday (test_excel_sync.SyncTests.test_eum_planned_date_monday) (value='21.09.2026')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_excel_sync.py", line 161, in test_eum_planned_date_monday
+    self.assertEqual(self.cards()[1]['plan_baslama'],want)
+AssertionError: None != '2026-09-21'
+
+======================================================================
+FAIL: test_eum_planned_date_monday (test_excel_sync.SyncTests.test_eum_planned_date_monday) (value='01.01.2026')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_excel_sync.py", line 161, in test_eum_planned_date_monday
+    self.assertEqual(self.cards()[1]['plan_baslama'],want)
+AssertionError: None != '2025-12-29'
+
+======================================================================
+FAIL: test_eum_planned_date_monday (test_excel_sync.SyncTests.test_eum_planned_date_monday) (value=datetime.datetime(2026, 9, 17, 23, 59))
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_excel_sync.py", line 161, in test_eum_planned_date_monday
+    self.assertEqual(self.cards()[1]['plan_baslama'],want)
+AssertionError: None != '2026-09-14'
+
+======================================================================
+FAIL: test_eum_planned_date_monday (test_excel_sync.SyncTests.test_eum_planned_date_monday) (value=46282.0)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_excel_sync.py", line 161, in test_eum_planned_date_monday
+    self.assertEqual(self.cards()[1]['plan_baslama'],want)
+AssertionError: None != '2026-09-14'
+
+======================================================================
+FAIL: test_machine_hand_and_eum_same_no_independent (test_excel_sync.SyncTests.test_machine_hand_and_eum_same_no_independent)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_excel_sync.py", line 132, in test_machine_hand_and_eum_same_no_independent
+    self.assertEqual(after['ELLE']['id'],before['ELLE']['id'])
+AssertionError: 1 != 2
+
+======================================================================
+FAIL: test_manual_card_not_hijacked (test_excel_sync.SyncTests.test_manual_card_not_hijacked)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_excel_sync.py", line 189, in test_manual_card_not_hijacked
+    self.assertEqual(depo.kart_getir(manual['id'])['kaynak'],'MANUEL')
+AssertionError: 'EXCEL' != 'MANUEL'
+- EXCEL
++ MANUEL
+
+
+======================================================================
+FAIL: test_missing_or_duplicate_no_rejects_without_changes (test_excel_sync.SyncTests.test_missing_or_duplicate_no_rejects_without_changes)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_excel_sync.py", line 177, in test_missing_or_duplicate_no_rejects_without_changes
+    with self.assertRaises((ex.ExcelAktarimHatasi,depo.VeriDogrulamaHatasi)):
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: (<class 'excel_araclari.ExcelAktarimHatasi'>, <class 'depo.VeriDogrulamaHatasi'>) not raised
+
+======================================================================
+FAIL: test_restart_preserves_source_identity_and_deletion (test_excel_sync.SyncTests.test_restart_preserves_source_identity_and_deletion)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_excel_sync.py", line 142, in test_restart_preserves_source_identity_and_deletion
+    self.assertEqual([k['sira'] for k in depo.kartlari_getir()],[2])
+AssertionError: Lists differ: [2, 2] != [2]
+
+First list contains 1 additional elements.
+First extra element 1:
+2
+
+- [2, 2]
++ [2]
+
+======================================================================
+FAIL: test_start_date_change_keeps_identity (test_excel_sync.SyncTests.test_start_date_change_keeps_identity)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_excel_sync.py", line 85, in test_start_date_change_keeps_identity
+    self.assertEqual(len(depo._kartlar),2); self.assertEqual(self.cards()[2]['id'],old)
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: 3 != 2
+
+======================================================================
+FAIL: test_status_sequence_including_delivered_without_date (test_excel_sync.SyncTests.test_status_sequence_including_delivered_without_date)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_excel_sync.py", line 92, in test_status_sequence_including_delivered_without_date
+    self.assertEqual(depo.kartlari_getir()[0]['durum'],status)
+AssertionError: 'D�ZG�DE' != 'TESL�M ED�LD�'
+- D�ZG�DE
++ TESL�M ED�LD�
+
+
+======================================================================
+FAIL: test_three_rows_reorder_insert_delete (test_excel_sync.SyncTests.test_three_rows_reorder_insert_delete)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_excel_sync.py", line 116, in test_three_rows_reorder_insert_delete
+    self.assertEqual({n:self.cards()[n]['id'] for n in ids},ids)
+AssertionError: {1: 3, 2: 4, 3: 1} != {1: 1, 2: 2, 3: 3}
+- {1: 3, 2: 4, 3: 1}
+?     ^     ^     ^
+
++ {1: 1, 2: 2, 3: 3}
+?     ^     ^     ^
+
+
+----------------------------------------------------------------------
+Ran 17 tests in 3.100s
+
+FAILED (failures=18, errors=1)

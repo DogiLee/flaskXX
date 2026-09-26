@@ -1,0 +1,29 @@
+test_01_real_upload_routes_update_api_templates_disk (__main__.Audit.test_01_real_upload_routes_update_api_templates_disk) ... ok
+test_02_progress_notes_blank_status_restart (__main__.Audit.test_02_progress_notes_blank_status_restart) ... ok
+test_03_excel_valid_status_quantity_matrix (__main__.Audit.test_03_excel_valid_status_quantity_matrix) ... ok
+test_04_full_operator_flow_all_three_types (__main__.Audit.test_04_full_operator_flow_all_three_types) ... ok
+test_05_roles_csrf_and_cross_type_writes (__main__.Audit.test_05_roles_csrf_and_cross_type_writes) ... ok
+test_06_inactive_hidden_and_admin_restore (__main__.Audit.test_06_inactive_hidden_and_admin_restore) ... ok
+test_07_material_confirmation (__main__.Audit.test_07_material_confirmation) ... ok
+test_08_backup_restore_and_manual_card (__main__.Audit.test_08_backup_restore_and_manual_card) ... ok
+test_09_reports_persistence_and_escaping (__main__.Audit.test_09_reports_persistence_and_escaping) ... ok
+test_10_delivery_filters_and_invalid_ranges (__main__.Audit.test_10_delivery_filters_and_invalid_ranges) ... ok
+test_11_monitor_and_badges (__main__.Audit.test_11_monitor_and_badges) ... ok
+test_12_auth_login_logout_disable_and_redirect (__main__.Audit.test_12_auth_login_logout_disable_and_redirect) ... ok
+test_13_atomic_failure_import_and_operator (__main__.Audit.test_13_atomic_failure_import_and_operator) ... ok
+test_14_simultaneous_notes_preserved (__main__.Audit.test_14_simultaneous_notes_preserved) ... ok
+test_15_empty_wrong_extension_and_corrupt_uploads (__main__.Audit.test_15_empty_wrong_extension_and_corrupt_uploads) ... ok
+test_16_identity_different_sheets_duplicate_business_keys (__main__.Audit.test_16_identity_different_sheets_duplicate_business_keys) ... ok
+test_17_admin_same_status_note_does_not_fabricate_date (__main__.Audit.test_17_admin_same_status_note_does_not_fabricate_date) ... ok
+test_bug_01_all_time_summary_matches_delivered_rows (__main__.Audit.test_bug_01_all_time_summary_matches_delivered_rows) ... ok
+test_bug_02_json_fractional_completion_rejected (__main__.Audit.test_bug_02_json_fractional_completion_rejected) ... ok
+test_bug_03_admin_stale_form_does_not_erase_new_note (__main__.Audit.test_bug_03_admin_stale_form_does_not_erase_new_note) ... ok
+test_bug_04_live_operator_type_change_takes_effect (__main__.Audit.test_bug_04_live_operator_type_change_takes_effect) ... ok
+test_bug_05_panel_type_filter_has_all_planned_cards (__main__.Audit.test_bug_05_panel_type_filter_has_all_planned_cards) ... ok
+test_bug_06_stale_admin_form_does_not_reduce_completed (__main__.Audit.test_bug_06_stale_admin_form_does_not_reduce_completed) ... ok
+test_bug_07_oversized_note_not_silently_truncated (__main__.Audit.test_bug_07_oversized_note_not_silently_truncated) ... ok
+
+----------------------------------------------------------------------
+Ran 24 tests in 19.192s
+
+OK

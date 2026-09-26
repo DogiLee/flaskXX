@@ -1,0 +1,13 @@
+{
+  "unauthenticated_note_post": {
+    "history": [
+      {
+        "status": 302,
+        "location": "/giris?devam=/api/not"
+      }
+    ],
+    "final_status": 200,
+    "content_type": "text/html; charset=utf-8",
+    "writes_expected": false
+  }
+}

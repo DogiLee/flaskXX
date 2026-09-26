@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Import Önizleme · PDGM İş Takip{% endblock %}
+{% block content %}
+<section class="panel-kutu">
+    <h1>Excel Aktarım Önizlemesi</h1>
+    {% if hata %}
+    <p class="bildirim hata" role="alert">{{ hata }}</p>
+    {% else %}
+    <p><strong>{{ dosya }}</strong> · {{ sonuc.satir }} satır · {{ sonuc.yeni }} yeni kart · {{ sonuc.pasife_alinan }} kart pasifleşecek · {{ sonuc.uyari }} veri uyarısı</p>
+    <p>Henüz kayıt değiştirilmedi. Aşağıdaki durum, adet ve tarih değişikliklerini kontrol edin. Notlar korunur. Boş veya geçersiz kaynak durumları Yönetim ekranında kontrol gerektirebilir.</p>
+    <div class="tablo-kapsayici">
+        <table>
+            <thead><tr><th>Kart</th><th>Alan</th><th>Değişiklik</th></tr></thead>
+            <tbody>
+            {% for k in sonuc.degisiklikler %}
+                {% for f in k.farklar %}
+                <tr><td>{{ k.talep_no }} · {{ k.stok_no }} · #{{ k.id }}{% if k.yeni %} (yeni){% endif %}</td>
+                    <td>{{ f.alan }}</td><td>{{ f.eski if f.eski is not none else '—' }} → {{ f.yeni if f.yeni is not none else '—' }}</td></tr>
+                {% endfor %}
+            {% else %}<tr><td colspan="3">Kart alanlarında değişiklik yok.</td></tr>{% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <form action="{{ url_for('yukle_onay') }}" method="post" class="sayfalama">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+        <button class="buton buton-ana" type="submit">Değişiklikleri Uygula</button>
+    </form>
+    {% endif %}
+    <a class="buton buton-hayalet" href="{{ url_for('yonetim') }}">Yönetime Dön</a>
+</section>
+{% endblock %}

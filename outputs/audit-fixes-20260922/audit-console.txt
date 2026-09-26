@@ -1,0 +1,47 @@
+[2026-09-22 01:22:06,715] INFO in app_test: Excel import OK: Excel aktar�ld� � 89 sat�r � 1 yeni � 88 g�ncellendi � 6 workflow korundu. � 1 kart kaynak Excel'de art�k yok. � 8 kart ELDE D�ZG� sayfas�ndan. � 8 kart E�M sayfas�ndan. � 1 kart�n durumu Excel'den g�ncellendi. � 10 veri uyar�s� var (bo�/ge�ersiz DURUM, eksik teslim tarihi vb.); bu kartlar Y�netim ekran�nda kontrol edilebilir. � Yedek: 20260922_012206_import_oncesi_3386dc41
+[2026-09-22 01:22:06,971] INFO in app_test: Excel import OK: Excel aktar�ld� � 90 sat�r � 0 yeni � 90 g�ncellendi � 6 workflow korundu. � 8 kart ELDE D�ZG� sayfas�ndan. � 8 kart E�M sayfas�ndan. � 1 kart�n durumu Excel'den g�ncellendi. � 11 veri uyar�s� var (bo�/ge�ersiz DURUM, eksik teslim tarihi vb.); bu kartlar Y�netim ekran�nda kontrol edilebilir. � Yedek: 20260922_012206_import_oncesi_9ae2c056
+[2026-09-22 01:22:16,416] WARNING in app_test: Admin yedek geri y�kledi: 20260922_012215_audit_383a6a5f
+[2026-09-22 01:22:17,534] INFO in app_test: RAPOR �ND�R�LD� � kullanici=tester
+[2026-09-22 01:22:17,591] INFO in app_test: KAYIT DOSYASI �ND�R�LD� � kullanici=tester � hangi=kartlar
+[2026-09-22 01:22:17,597] INFO in app_test: KAYIT DOSYASI �ND�R�LD� � kullanici=tester � hangi=log
+[2026-09-22 01:22:17,602] INFO in app_test: KAYIT DOSYASI �ND�R�LD� � kullanici=tester � hangi=yuklemeler
+[2026-09-22 01:22:19,190] WARNING in app_test: HATALI G�R�� � kullanici=machine � ip=127.0.0.1
+[2026-09-22 01:22:21,585] WARNING in app_test: Excel import reddedildi: Dosya ge�erli bir Excel �al��ma kitab� de�il: File is not a zip file
+{
+  "tests": 24,
+  "failures": [],
+  "errors": [],
+  "observations": {
+    "quantity_policy": {
+      "PLANA ALINDI": 0,
+      "HAZIR": 0,
+      "D�ZG�DE": 3,
+      "TESL�M ED�LD�": 10
+    },
+    "all_time_summary": {
+      "rows": 8,
+      "summary_cards": 8
+    },
+    "fractional_quantity": {
+      "status": 400,
+      "completed": 3
+    },
+    "stale_admin_note": {
+      "status": 409,
+      "new_note_preserved": true
+    },
+    "stale_operator_type": {
+      "status": 409,
+      "file_type": "elle_dizgi"
+    },
+    "planned_truncation": {
+      "all": 36,
+      "sent_to_panel": 36
+    },
+    "stale_admin_quantity": {
+      "status": 409,
+      "completed_after": 5,
+      "expected": 5
+    }
+  }
+}

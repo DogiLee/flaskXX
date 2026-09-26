@@ -1,0 +1,22 @@
+{
+  "app.py": "6f40a5e0a2302e11ffea2c87682fb8e9f1b9267488ec06d953e7cbb9a7aad142",
+  "depo.py": "43ae399d9bc2616d36afc5a853b934c46fd4cea8a388eb91c1cd409b9c4a1cc1",
+  "excel_araclari.py": "24645b66d157ea3857ae4e058d0cffcda3cba3bf0f1ebde7ee8f68478965b3c8",
+  "templates\\base.html": "047741bf5dd68c5a809b4de44f9246c20924a57e8f7e01b6c2573af87041b849",
+  "templates\\giris.html": "4730d14045beeded950c0d7ab0b794c30c155863c362c756bcee2b96c8c184bf",
+  "templates\\import_onizleme.html": "79cdd5a5cf95b368b9eb790fd262480a30666b506cbb01a53d118d49bc9b0301",
+  "templates\\monitor.html": "51655be050068d5428353e19a4e06a0554c16b14f4b084d1d90010d123aaeb09",
+  "templates\\operator.html": "94eee3d615fe3c9c82eaba6c967ad79fbd9a0e52d72e1bf7280242969af69b8e",
+  "templates\\ozet.html": "9ddffbdfaa85984cda020a94bab9d8e4bc972c29b552936ced01fa5809d3adc9",
+  "templates\\panel.html": "5b88348371f86986320d1fe4fc460f0fff65577f5a43ed60b074ab82f3b80b9d",
+  "templates\\yetkisiz.html": "2271a1049e9a3bacaec58e1269f2c447e71f4ef4d245021c9c653ed12c5aecf4",
+  "templates\\yonetim.html": "93c1d1de1cf015fd8bcb597d7900b0bbc9fc7b559a79a63b275185e0478f9b0e",
+  "static\\stil.css": "8d3616d86d3f9c55a23b97d1c2725ed2ab3338e448f785df849b6139674ddacf",
+  "tests\\__init__.py": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "tests\\test_audit_fixes.py": "f72883068297c4b9222cd690efa29d6ba9196de87cb4feb9398a2178cc0a4fb8",
+  "tests\\test_excel_com.py": "0405fdc8a43f69e8c60ad7e7db470f57a49bed3c4736d19abdcbd86e9cb30192",
+  "tests\\test_excel_sync.py": "d1252e88e0f1f123b376271f10995b962b68709f61581a1042ca620143afc61b",
+  "tests\\test_ui.py": "a039df02fb82ce742ec9c524702b2aba92bd7a3910726c10abcb5dc578607eb2",
+  "tests\\frontend_contract.cjs": "f98d63297f774fabf8e90801631e934715ee71919f46fda441830f1349815eec",
+  "tests\\monitor_rotation.cjs": "945c96563c6f52cf1dc9b8243731d23d9ca1ab0bd9fcbb4f9cae235b63e64fd5"
+}

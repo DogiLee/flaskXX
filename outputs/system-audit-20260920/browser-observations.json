@@ -1,0 +1,23 @@
+{
+  "method": "Observed through Codex browser UI; manually recorded observations, not an automated test-runner export",
+  "dates": ["2026-09-20", "2026-09-21"],
+  "target": "http://127.0.0.1:5017",
+  "data": "Isolated temporary storage populated from 01_ILK_IMPORT.xlsx",
+  "operator_flow": {
+    "card": "TEST-1012 / STK-1012",
+    "actions": ["Start 10 with note", "Complete 3 with note", "Add independent multiline Turkish note", "Complete remaining 7", "Confirm delivered"],
+    "observed_final": {"status": "TESLİM EDİLDİ", "completed": 10, "remaining": 0, "visible_notes": 3},
+    "delivery_confirmation": "Native confirm accepted with Return; final delivered card inspected"
+  },
+  "findings": [
+    {"id":"F07","observation":"Pano ELDE + planned: counter 2, result list empty"},
+    {"id":"F08","observation":"Before TEST-1012 delivery: all-time delivered list 8 cards / 40 units; summary 6 jobs / 30 units"},
+    {"id":"F09","observation":"Admin import help claims workflow and completed counts are preserved without stating status-based exceptions"},
+    {"id":"F10","observation":"Custom 2026-09-18 to 2026-09-18 returns TEST-1021; reload keeps custom selected but clears dates and shows initial 8 rows"},
+    {"id":"F11","observation":"Searching visible owner TEST VERİSİ on Operator yields no results"},
+    {"id":"F12","requested_viewport":{"width":390,"height":844},"measured_css":{"viewport_width":312,"document_scroll_width":942,"shell_width":292.5,"grid_width":932.2,"table_container_width":902.54},"observation":"Admin page overflows; Operator fit at the same narrow viewport"},
+    {"id":"F13","observation":"/static/pdgm_logo.png has complete=true and naturalWidth=0"}
+  ],
+  "monitor": "Only MAKINE displayed; visible cards changed on rotation; exact 12s timing checked separately in source JavaScript test",
+  "cleanup": "Temporary viewport override reset"
+}

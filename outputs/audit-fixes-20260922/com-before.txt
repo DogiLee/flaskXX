@@ -1,0 +1,22 @@
+test_text_identifiers_keep_leading_zeros_and_long_digits (tests.test_excel_com.ExcelCOMTests.test_text_identifiers_keep_leading_zeros_and_long_digits) ... ERROR
+
+======================================================================
+ERROR: test_text_identifiers_keep_leading_zeros_and_long_digits (tests.test_excel_com.ExcelCOMTests.test_text_identifiers_keep_leading_zeros_and_long_digits)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_excel_com.py", line 24, in test_text_identifiers_keep_leading_zeros_and_long_digits
+    ex.excelden_aktar(str(path),'tester')
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\excel_araclari.py", line 615, in excelden_aktar
+    return _excelden_aktar(dosya_yolu, kullanici)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\excel_araclari.py", line 649, in _excelden_aktar
+    uyari_sayisi += _sayfa_satirlarini_coz(
+                    ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\excel_araclari.py", line 561, in _sayfa_satirlarini_coz
+    raise ExcelAktarimHatasi(
+excel_araclari.ExcelAktarimHatasi: 'MAK�NE' sat�r 3: Tekrarlanan kaynak kimli�i NO:1.
+
+----------------------------------------------------------------------
+Ran 1 test in 8.367s
+
+FAILED (errors=1)

@@ -1,0 +1,122 @@
+test_all_time_delivery_summary_includes_undated (tests.test_audit_fixes.AuditFixTests.test_all_time_delivery_summary_includes_undated) ... FAIL
+test_expired_api_session_returns_json_401_without_redirect (tests.test_audit_fixes.AuditFixTests.test_expired_api_session_returns_json_401_without_redirect) ... FAIL
+test_fractional_boolean_and_nonfinite_quantities_rejected (tests.test_audit_fixes.AuditFixTests.test_fractional_boolean_and_nonfinite_quantities_rejected) ... 
+  test_fractional_boolean_and_nonfinite_quantities_rejected (tests.test_audit_fixes.AuditFixTests.test_fractional_boolean_and_nonfinite_quantities_rejected) (value=1.9) ... FAIL
+test_fractional_boolean_and_nonfinite_quantities_rejected (tests.test_audit_fixes.AuditFixTests.test_fractional_boolean_and_nonfinite_quantities_rejected) ... FAIL
+test_fresh_edit_accepted_and_missing_version_rejected (tests.test_audit_fixes.AuditFixTests.test_fresh_edit_accepted_and_missing_version_rejected) ... FAIL
+test_long_note_rejected_without_memory_or_disk_changes (tests.test_audit_fixes.AuditFixTests.test_long_note_rejected_without_memory_or_disk_changes) ... FAIL
+test_plan_filter_dataset_does_not_lose_cards_after_twelfth (tests.test_audit_fixes.AuditFixTests.test_plan_filter_dataset_does_not_lose_cards_after_twelfth) ... FAIL
+test_stale_edit_cannot_replace_new_note_or_quantity (tests.test_audit_fixes.AuditFixTests.test_stale_edit_cannot_replace_new_note_or_quantity) ... FAIL
+test_1904_numeric_dates (tests.test_excel_sync.SyncTests.test_1904_numeric_dates) ... ok
+test_actual_date_clear_and_change (tests.test_excel_sync.SyncTests.test_actual_date_clear_and_change) ... ok
+test_admin_note_edit_does_not_invent_imported_event_dates (tests.test_excel_sync.SyncTests.test_admin_note_edit_does_not_invent_imported_event_dates) ... ok
+test_ambiguous_legacy_duplicate_rejected_atomically (tests.test_excel_sync.SyncTests.test_ambiguous_legacy_duplicate_rejected_atomically) ... ok
+test_backups_do_not_overwrite_within_same_second (tests.test_excel_sync.SyncTests.test_backups_do_not_overwrite_within_same_second) ... ok
+test_blank_or_invalid_status_preserves_manual_progress_notes (tests.test_excel_sync.SyncTests.test_blank_or_invalid_status_preserves_manual_progress_notes) ... ok
+test_blank_status_cleared_actual_date_not_replaced_by_old_timestamp (tests.test_excel_sync.SyncTests.test_blank_status_cleared_actual_date_not_replaced_by_old_timestamp) ... ok
+test_concurrent_commits_keep_each_snapshot_whole (tests.test_excel_sync.SyncTests.test_concurrent_commits_keep_each_snapshot_whole) ... ok
+test_delete_only_one_duplicate_and_disallow_operation (tests.test_excel_sync.SyncTests.test_delete_only_one_duplicate_and_disallow_operation) ... ok
+test_direct_import_rejects_duplicate_source_key (tests.test_excel_sync.SyncTests.test_direct_import_rejects_duplicate_source_key) ... ok
+test_duplicate_date_change_keeps_identity (tests.test_excel_sync.SyncTests.test_duplicate_date_change_keeps_identity) ... ok
+test_eum_existing_planned_start_header (tests.test_excel_sync.SyncTests.test_eum_existing_planned_start_header) ... ok
+test_eum_planned_date_monday (tests.test_excel_sync.SyncTests.test_eum_planned_date_monday) ... ok
+test_explicit_row_id_without_no_survives_reorder (tests.test_excel_sync.SyncTests.test_explicit_row_id_without_no_survives_reorder) ... ok
+test_fresh_python_process_reads_same_persisted_cards (tests.test_excel_sync.SyncTests.test_fresh_python_process_reads_same_persisted_cards) ... ok
+test_inactive_notes_are_admin_only (tests.test_excel_sync.SyncTests.test_inactive_notes_are_admin_only) ... ok
+test_invalid_date_aborts_all_rows (tests.test_excel_sync.SyncTests.test_invalid_date_aborts_all_rows) ... ok
+test_legacy_migration_preserves_ids_notes_and_backup (tests.test_excel_sync.SyncTests.test_legacy_migration_preserves_ids_notes_and_backup) ... ok
+test_legacy_unique_without_no_migrates (tests.test_excel_sync.SyncTests.test_legacy_unique_without_no_migrates) ... ok
+test_lossy_legacy_no_rejected_instead_of_losing_history (tests.test_excel_sync.SyncTests.test_lossy_legacy_no_rejected_instead_of_losing_history) ... ok
+test_machine_hand_and_eum_same_no_independent (tests.test_excel_sync.SyncTests.test_machine_hand_and_eum_same_no_independent) ... ok
+test_malformed_populated_row_is_not_a_deletion (tests.test_excel_sync.SyncTests.test_malformed_populated_row_is_not_a_deletion) ... ok
+test_manual_card_not_hijacked (tests.test_excel_sync.SyncTests.test_manual_card_not_hijacked) ... ok
+test_manual_partial_quantity_conflict_rolls_back (tests.test_excel_sync.SyncTests.test_manual_partial_quantity_conflict_rolls_back) ... ok
+test_manual_workflow_still_records_real_events (tests.test_excel_sync.SyncTests.test_manual_workflow_still_records_real_events) ... ok
+test_missing_or_duplicate_no_rejects_without_changes (tests.test_excel_sync.SyncTests.test_missing_or_duplicate_no_rejects_without_changes) ... ok
+test_plan_fields_clear_without_creating_new_card (tests.test_excel_sync.SyncTests.test_plan_fields_clear_without_creating_new_card) ... ok
+test_replace_failure_rolls_back_memory_and_disk (tests.test_excel_sync.SyncTests.test_replace_failure_rolls_back_memory_and_disk) ... ok
+test_restart_preserves_source_identity_and_deletion (tests.test_excel_sync.SyncTests.test_restart_preserves_source_identity_and_deletion) ... ok
+test_same_upload_idempotent (tests.test_excel_sync.SyncTests.test_same_upload_idempotent) ... ok
+test_start_date_change_keeps_identity (tests.test_excel_sync.SyncTests.test_start_date_change_keeps_identity) ... ok
+test_status_sequence_including_delivered_without_date (tests.test_excel_sync.SyncTests.test_status_sequence_including_delivered_without_date) ... ok
+test_three_rows_reorder_insert_delete (tests.test_excel_sync.SyncTests.test_three_rows_reorder_insert_delete) ... ok
+test_timezone_dates_keep_source_calendar_day (tests.test_excel_sync.SyncTests.test_timezone_dates_keep_source_calendar_day) ... ok
+test_valid_empty_source_deactivates_all (tests.test_excel_sync.SyncTests.test_valid_empty_source_deactivates_all) ... ok
+test_valid_status_updates_quantity_but_keeps_notes_and_hidden (tests.test_excel_sync.SyncTests.test_valid_status_updates_quantity_but_keeps_notes_and_hidden) ... ok
+test_monitor_dataset_and_badge_are_local (tests.test_ui.UITests.test_monitor_dataset_and_badge_are_local) ... ok
+test_panel_delivery_api_excludes_deleted_source_rows (tests.test_ui.UITests.test_panel_delivery_api_excludes_deleted_source_rows) ... ok
+test_upload_route_updates_api_and_persistence (tests.test_ui.UITests.test_upload_route_updates_api_and_persistence) ... [2026-09-22 00:46:11,538] INFO in app_test: Excel import OK: Excel aktar�ld� � 1 sat�r � 1 yeni � 0 g�ncellendi � 0 workflow korundu. � Yedek: 20260922_004611_import_oncesi_50f07e9f
+[2026-09-22 00:46:11,651] INFO in app_test: Excel import OK: Excel aktar�ld� � 1 sat�r � 0 yeni � 1 g�ncellendi � 0 workflow korundu. � 1 kart�n durumu Excel'den g�ncellendi. � 1 veri uyar�s� var (bo�/ge�ersiz DURUM, eksik teslim tarihi vb.); bu kartlar Y�netim ekran�nda kontrol edilebilir. � Yedek: 20260922_004611_import_oncesi_086fe1fe
+ok
+
+======================================================================
+FAIL: test_all_time_delivery_summary_includes_undated (tests.test_audit_fixes.AuditFixTests.test_all_time_delivery_summary_includes_undated)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_audit_fixes.py", line 76, in test_all_time_delivery_summary_includes_undated
+    self.assertEqual(r['ozet']['kart'],2)
+AssertionError: 1 != 2
+
+======================================================================
+FAIL: test_expired_api_session_returns_json_401_without_redirect (tests.test_audit_fixes.AuditFixTests.test_expired_api_session_returns_json_401_without_redirect)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_audit_fixes.py", line 68, in test_expired_api_session_returns_json_401_without_redirect
+    self.assertEqual(r.status_code,401)
+AssertionError: 302 != 401
+
+======================================================================
+FAIL: test_fractional_boolean_and_nonfinite_quantities_rejected (tests.test_audit_fixes.AuditFixTests.test_fractional_boolean_and_nonfinite_quantities_rejected) (value=1.9)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_audit_fixes.py", line 60, in test_fractional_boolean_and_nonfinite_quantities_rejected
+    self.assertGreaterEqual(self.post('/api/basla',{'kart_id':k['id'],'adet':value}).status_code,400)
+AssertionError: 200 not greater than or equal to 400
+
+======================================================================
+FAIL: test_fractional_boolean_and_nonfinite_quantities_rejected (tests.test_audit_fixes.AuditFixTests.test_fractional_boolean_and_nonfinite_quantities_rejected)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_audit_fixes.py", line 61, in test_fractional_boolean_and_nonfinite_quantities_rejected
+    self.assertEqual(depo.kartlari_getir()[0]['durum'],'PLANA ALINDI')
+AssertionError: 'D�ZG�DE' != 'PLANA ALINDI'
+- D�ZG�DE
++ PLANA ALINDI
+
+
+======================================================================
+FAIL: test_fresh_edit_accepted_and_missing_version_rejected (tests.test_audit_fixes.AuditFixTests.test_fresh_edit_accepted_and_missing_version_rejected)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_audit_fixes.py", line 41, in test_fresh_edit_accepted_and_missing_version_rejected
+    self.assertEqual(self.post('/api/admin/duzenle',payload).status_code,409)
+AssertionError: 200 != 409
+
+======================================================================
+FAIL: test_long_note_rejected_without_memory_or_disk_changes (tests.test_audit_fixes.AuditFixTests.test_long_note_rejected_without_memory_or_disk_changes)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_audit_fixes.py", line 52, in test_long_note_rejected_without_memory_or_disk_changes
+    self.assertEqual(response.status_code,400)
+AssertionError: 200 != 400
+
+======================================================================
+FAIL: test_plan_filter_dataset_does_not_lose_cards_after_twelfth (tests.test_audit_fixes.AuditFixTests.test_plan_filter_dataset_does_not_lose_cards_after_twelfth)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_audit_fixes.py", line 85, in test_plan_filter_dataset_does_not_lose_cards_after_twelfth
+    self.assertEqual(len(contexts[-1]['plana_alindi']),15)
+AssertionError: 12 != 15
+
+======================================================================
+FAIL: test_stale_edit_cannot_replace_new_note_or_quantity (tests.test_audit_fixes.AuditFixTests.test_stale_edit_cannot_replace_new_note_or_quantity)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\DO�UKAN �AYA�ZI\Downloads\gokberk_flask\tests\test_audit_fixes.py", line 33, in test_stale_edit_cannot_replace_new_note_or_quantity
+    self.assertEqual(response.status_code,409)
+AssertionError: 200 != 409
+
+----------------------------------------------------------------------
+Ran 46 tests in 12.756s
+
+FAILED (failures=8)

@@ -1,0 +1,8 @@
+{
+  "unauthenticated_note_post": {
+    "history": [],
+    "final_status": 401,
+    "content_type": "application/json",
+    "writes_expected": false
+  }
+}

@@ -1,0 +1,50 @@
+[
+  {
+    "Path": "C:\\Users\\DOĞUKAN ÇAYAĞZI\\Downloads\\gokberk_flask\\app.py",
+    "Hash": "658B3B33409E80B0B4BEB83D1E20FF9EA53DCE2FD084478791DBBB647D7A0938"
+  },
+  {
+    "Path": "C:\\Users\\DOĞUKAN ÇAYAĞZI\\Downloads\\gokberk_flask\\depo.py",
+    "Hash": "B6475072F3E6976E6ACA7A68423BECDED6E2B113C9C48D03A942E7EF32374AA0"
+  },
+  {
+    "Path": "C:\\Users\\DOĞUKAN ÇAYAĞZI\\Downloads\\gokberk_flask\\excel_araclari.py",
+    "Hash": "D81C714787FDB861D83CD949D8B7635D82BEF6FA334B9A246CDE6957D0920564"
+  },
+  {
+    "Path": "C:\\Users\\DOĞUKAN ÇAYAĞZI\\Downloads\\gokberk_flask\\templates\\base.html",
+    "Hash": "80E9FE93E95250A204DA709C44A3936779574EC5014AF59C472EC245AEF4C120"
+  },
+  {
+    "Path": "C:\\Users\\DOĞUKAN ÇAYAĞZI\\Downloads\\gokberk_flask\\templates\\giris.html",
+    "Hash": "BB17FAD13AF76765C4E60394934E33C33D9034FE1EDE155AAF57ECB80CC95AAC"
+  },
+  {
+    "Path": "C:\\Users\\DOĞUKAN ÇAYAĞZI\\Downloads\\gokberk_flask\\templates\\monitor.html",
+    "Hash": "51655BE050068D5428353E19A4E06A0554C16B14F4B084D1D90010D123AAEB09"
+  },
+  {
+    "Path": "C:\\Users\\DOĞUKAN ÇAYAĞZI\\Downloads\\gokberk_flask\\templates\\operator.html",
+    "Hash": "361145774F47F06C4FB231D87ED424B71A7D783DDC6BEFA271CDEFB60C1D02FB"
+  },
+  {
+    "Path": "C:\\Users\\DOĞUKAN ÇAYAĞZI\\Downloads\\gokberk_flask\\templates\\ozet.html",
+    "Hash": "9DDFFBDFAA85984CDA020A94BAB9D8E4BC972C29B552936CED01FA5809D3ADC9"
+  },
+  {
+    "Path": "C:\\Users\\DOĞUKAN ÇAYAĞZI\\Downloads\\gokberk_flask\\templates\\panel.html",
+    "Hash": "2D357F6E1674FC5F8BB131F09B03007EADFC540DD0A6331D9ADBBF8784C8EA82"
+  },
+  {
+    "Path": "C:\\Users\\DOĞUKAN ÇAYAĞZI\\Downloads\\gokberk_flask\\templates\\yetkisiz.html",
+    "Hash": "2271A1049E9A3BACAEC58E1269F2C447E71F4EF4D245021C9C653ED12C5AECF4"
+  },
+  {
+    "Path": "C:\\Users\\DOĞUKAN ÇAYAĞZI\\Downloads\\gokberk_flask\\templates\\yonetim.html",
+    "Hash": "1573873AF7E9A27333A74E64005CC3E085D874AD316F4F837AFC12C80F2229D8"
+  },
+  {
+    "Path": "C:\\Users\\DOĞUKAN ÇAYAĞZI\\Downloads\\gokberk_flask\\static\\stil.css",
+    "Hash": "1999315A602E043DB8E79004FA084D29C0C1EC7A18F6458333B369C9E2895D2A"
+  }
+]

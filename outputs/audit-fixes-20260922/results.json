@@ -1,0 +1,38 @@
+{
+  "tests": 24,
+  "failures": [],
+  "errors": [],
+  "observations": {
+    "quantity_policy": {
+      "PLANA ALINDI": 0,
+      "HAZIR": 0,
+      "DİZGİDE": 3,
+      "TESLİM EDİLDİ": 10
+    },
+    "all_time_summary": {
+      "rows": 8,
+      "summary_cards": 8
+    },
+    "fractional_quantity": {
+      "status": 400,
+      "completed": 3
+    },
+    "stale_admin_note": {
+      "status": 409,
+      "new_note_preserved": true
+    },
+    "stale_operator_type": {
+      "status": 409,
+      "file_type": "elle_dizgi"
+    },
+    "planned_truncation": {
+      "all": 36,
+      "sent_to_panel": 36
+    },
+    "stale_admin_quantity": {
+      "status": 409,
+      "completed_after": 5,
+      "expected": 5
+    }
+  }
+}

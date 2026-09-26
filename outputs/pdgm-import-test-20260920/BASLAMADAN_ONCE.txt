@@ -1,0 +1,60 @@
+PDGM TEST PAKETİ
+Güncelleme 22.09.2026: B01 artık başarılı import olmalıdır; 001 ve 1 ayrıdır.
+Çalışma kitaplarındaki eski bilinen-hata açıklamaları tarihsel kayıttır.
+Güncel gerçek Excel sonucu DOGRULAMA_COM.txt içindedir.
+Referans gün: 2026-09-20
+
+YALNIZ AYRI TEST KOPYASINDA KULLANIN. Import tam kaynak listesi kabul edilir.
+Bu dosyalarda bulunmayan mevcut Excel kartları pasifleşir.
+
+Sıra: 01'i yükle, aynı dosyayı tekrar yükle. 1012 kartında 10 başlat / 3 bitir / not ekle.
+02'yi yükle, 03'ü yükle. H01–H12 ayrı ayrı reddedilmeli.
+H13 için 1012 kartında 3 tamamlanan adet önkoşulu gerekir.
+04 ELDE sayfasını kaldırır; 05 bütün kaynakları boşaltır. Bunları en son dene.
+03'ü yeniden yükleyerek kaynak kartlarını geri getirebilirsin.
+
+Her Excel'in TEST REHBERİ sekmesinde rol, operatör, yönetim, monitor ve hata testleri var.
+Her kaynak satırının O/P kolonları test kodunu ve beklenen davranışı açıklar.
+Bunlar uygulama not alanına aktarılmaz.
+Gün bazlı rozetler bilgisayarın gerçek tarihine göre değişir.
+Parola/gerçek kullanıcı/üretim verisi bulunmaz.
+
+DOSYALAR
+01_ILK_IMPORT.xlsx
+  Kabul. İlk yükleme ve aynı dosyayı tekrar yükleme.
+02_YENIDEN_IMPORT.xlsx
+  Kabul. 1 yeni, 1 pasif; diğer kaynak kimlikleri korunur.
+03_TESLIM_VE_GERI_GELEN.xlsx
+  Kabul. 1007 teslim; 1003 eski ID ile geri gelir; 1023 teslim tarihi boşalır.
+04_ELDE_SAYFASI_YOK.xlsx
+  Kabul. Yalnız ELDE kaynakları pasifleşir. 03 dosyasıyla geri getirilebilir.
+05_TUM_KAYNAKLAR_BOS.xlsx
+  Kabul. Tüm Excel kartları pasif; manuel kartlar ve audit kayıtları korunur.
+H01_TEKRAR_NO.xlsx
+  Reddedilir. Tekrarlanan kaynak kimliği.
+H02_EKSIK_KIMLIK.xlsx
+  Reddedilir. Kalıcı kimlik gerekli.
+H03_EKSIK_STOK.xlsx
+  Reddedilir. Satır silinmiş sayılmamalı.
+H04_EKSIK_TALEP.xlsx
+  Reddedilir. Satır silinmiş sayılmamalı.
+H05_SIFIR_ADET.xlsx
+  Reddedilir. Adet en az 1.
+H06_KESIRLI_ADET.xlsx
+  Reddedilir. Adet tam sayı.
+H07_BELIRSIZ_ADET.xlsx
+  Reddedilir. Adet tek sayı olmalı.
+H08_GECERSIZ_TARIH.xlsx
+  Reddedilir. Geçersiz tarih.
+H09_TERS_TARIHLER.xlsx
+  Reddedilir. Başlangıç teslimden sonra olamaz.
+H10_MAKINE_YOK.xlsx
+  Reddedilir. MAKİNE sayfası gerekli.
+H11_TEKRAR_BASLIK.xlsx
+  Reddedilir. İkinci Adet başlığı aynı alana eşlenir.
+H12_ADET_KOLONU_YOK.xlsx
+  Reddedilir. Kart Üretim Adet sütunu gerekli.
+H13_MANUEL_ADET_CELISKISI.xlsx
+  Önkoşul: 1012 kartında en az 3 tamamlanan adet. Toplam=2, DURUM boş; tüm import reddedilir.
+B01_BASTAKI_SIFIR_COM_HATASI.xlsx
+  İstenen: 001 ve 1 ayrı kartlar. Mevcut gerçek COM: NO:1 tekrarı ile ret. Parser tek başına kabul eder.

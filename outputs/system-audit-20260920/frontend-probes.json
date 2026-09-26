@@ -1,0 +1,15 @@
+{
+  "redirectedLogin": {
+    "rejected": false,
+    "returned": {
+      "hata": "<html>Giriş yapın</html>"
+    },
+    "expected": "Reject non-JSON/redirected login response"
+  },
+  "turkishSearch": {
+    "indexed": "test veri̇si̇",
+    "query": "test verisi",
+    "matches": false,
+    "expected": true
+  }
+}

@@ -1,0 +1,1 @@
+monitor rotation: 12s dwell, reload continuity, all 25 cards visible before refresh: PASS

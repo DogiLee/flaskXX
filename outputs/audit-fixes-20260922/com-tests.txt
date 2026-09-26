@@ -1,0 +1,7 @@
+test_real_snapshot_hidden_identity_1904_and_reupload (tests.test_excel_com.ExcelCOMTests.test_real_snapshot_hidden_identity_1904_and_reupload) ... ok
+test_text_identifiers_keep_leading_zeros_and_long_digits (tests.test_excel_com.ExcelCOMTests.test_text_identifiers_keep_leading_zeros_and_long_digits) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 17.250s
+
+OK

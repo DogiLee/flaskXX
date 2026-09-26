@@ -1,0 +1,75 @@
+SNAPSHOT SINIRI TAKLİT EDİLDİ + GERÇEK PARSER / MERGE / KALICI DEPO
+Tüm işlemler geçici veri klasöründe yapıldı. Üretim verisine dokunulmadı.
+Bu rapor import senaryolarını doğrular. UI/rol/monitor adımları TEST REHBERİ ile ayrıca denenmelidir.
+
+01: 89 kaynak satırı import edildi.
+MAKİNE/ELDE aynı talep ve stok bağımsız.
+Harfli NO N001 ve N1 ayrı kimlikler.
+EÜM 1001: Pazartesi/boş tarih = 2026-09-14.
+EÜM 3002: Pazartesi/boş tarih = 2026-09-14.
+EÜM 3003: Pazartesi/boş tarih = 2026-09-21.
+EÜM 3004: Pazartesi/boş tarih = 2025-12-29.
+EÜM 3005: Pazartesi/boş tarih = 2026-09-21.
+EÜM 3006: Pazartesi/boş tarih = None.
+EÜM 3008: Pazartesi/boş tarih = 2026-09-14.
+Tarihsiz teslimde tarih uydurulmadı.
+1025: metinsel adet 1500.
+1026: metinsel adet 1500.
+1027: metinsel adet 1500.
+Boş/geçersiz durum yönetimde eksik.
+Aynı dosya tekrarında yeni kart yok.
+02: 1 yeni, 1 pasif; 89 aktif kaynak.
+02: yalnız silinen duplicate 1003 pasif.
+Satır sıralaması değişince bütün eski ID’ler korundu.
+02: silinen plan tarihleri temizlendi.
+02: değişen plan tarihleri güncellendi.
+02: aynı kimlikte talep/stok düzeltmesi işlendi.
+02: 3 tamamlanan adet ve manuel notlar korundu.
+02: Excel durumu DİZGİDE oldu.
+03: silinen satır aynı ID ile geri geldi.
+03: Excel teslim geçişi uygulandı.
+03: gerçekleşen teslim tarihi temizlendi.
+H01_TEKRAR_NO.xlsx: hata sonrası bellek değişmedi.
+H01_TEKRAR_NO.xlsx: hata sonrası kalıcı dosyalar değişmedi.
+  Ret nedeni: 'MAKİNE' satır 6: Tekrarlanan kaynak kimliği NO:1001.
+H02_EKSIK_KIMLIK.xlsx: hata sonrası bellek değişmedi.
+H02_EKSIK_KIMLIK.xlsx: hata sonrası kalıcı dosyalar değişmedi.
+  Ret nedeni: 'MAKİNE' satır 5: Kalıcı NO veya PDGM_ROW_ID gerekli. Her satıra benzersiz ve sonraki yüklemelerde değişmeyen bir kimlik verin.
+H03_EKSIK_STOK.xlsx: hata sonrası bellek değişmedi.
+H03_EKSIK_STOK.xlsx: hata sonrası kalıcı dosyalar değişmedi.
+  Ret nedeni: 'MAKİNE' satır 5: Talep NO ve Kart Stok No gerekli; eksik satır silinmiş kabul edilmedi.
+H04_EKSIK_TALEP.xlsx: hata sonrası bellek değişmedi.
+H04_EKSIK_TALEP.xlsx: hata sonrası kalıcı dosyalar değişmedi.
+  Ret nedeni: 'MAKİNE' satır 5: Talep NO ve Kart Stok No gerekli; eksik satır silinmiş kabul edilmedi.
+H05_SIFIR_ADET.xlsx: hata sonrası bellek değişmedi.
+H05_SIFIR_ADET.xlsx: hata sonrası kalıcı dosyalar değişmedi.
+  Ret nedeni: 'MAKİNE' sayfası, satır 5: Üretim adedi en az 1 olmalı: 0
+H06_KESIRLI_ADET.xlsx: hata sonrası bellek değişmedi.
+H06_KESIRLI_ADET.xlsx: hata sonrası kalıcı dosyalar değişmedi.
+  Ret nedeni: 'MAKİNE' sayfası, satır 5: Üretim adedi tam sayı olmalı: 2.5
+H07_BELIRSIZ_ADET.xlsx: hata sonrası bellek değişmedi.
+H07_BELIRSIZ_ADET.xlsx: hata sonrası kalıcı dosyalar değişmedi.
+  Ret nedeni: 'MAKİNE' sayfası, satır 5: Üretim adedi tek bir sayı içermeli: '400 / 500 ADET'
+H08_GECERSIZ_TARIH.xlsx: hata sonrası bellek değişmedi.
+H08_GECERSIZ_TARIH.xlsx: hata sonrası kalıcı dosyalar değişmedi.
+  Ret nedeni: Excel satır 5: Planlanan Teslim Tarihi okunamadı. Gelen değer: '31.02.2026'
+H09_TERS_TARIHLER.xlsx: hata sonrası bellek değişmedi.
+H09_TERS_TARIHLER.xlsx: hata sonrası kalıcı dosyalar değişmedi.
+  Ret nedeni: 'MAKİNE' sayfası, satır 5: Dizgi Başlama Tarihi (2026-10-05) Planlanan Teslim Tarihinden (2026-09-21) sonra olamaz.
+H10_MAKINE_YOK.xlsx: hata sonrası bellek değişmedi.
+H10_MAKINE_YOK.xlsx: hata sonrası kalıcı dosyalar değişmedi.
+  Ret nedeni: 'MAKİNE' sayfası bulunamadı. Dosyadaki sayfalar: TEST REHBERİ, ELDE DİZGİ, EÜM
+H11_TEKRAR_BASLIK.xlsx: hata sonrası bellek değişmedi.
+H11_TEKRAR_BASLIK.xlsx: hata sonrası kalıcı dosyalar değişmedi.
+  Ret nedeni: 'MAKİNE' sayfası: 'ADET' için birden fazla görünür Excel sütunu bulundu.
+H12_ADET_KOLONU_YOK.xlsx: hata sonrası bellek değişmedi.
+H12_ADET_KOLONU_YOK.xlsx: hata sonrası kalıcı dosyalar değişmedi.
+  Ret nedeni: 'MAKİNE' sayfası: Zorunlu 'Kart Üretim Adet' sütunu bulunamadı.
+H13_MANUEL_ADET_CELISKISI.xlsx: hata sonrası bellek değişmedi.
+H13_MANUEL_ADET_CELISKISI.xlsx: hata sonrası kalıcı dosyalar değişmedi.
+  Ret nedeni: EXCEL:v2:["MAKINE","NO:1012"]: Excel toplam adedi (2), tamamlanan adetten (3) küçük. Import iptal edildi.
+04: yalnız 8 ELDE kartı pasifleşti.
+05: tüm Excel kartları pasif, manuel kart aktif.
+Yeniden okumadaki tek temsil farkı: boş metin ile boş hücre.
+Yeniden okumada ID, tarih, not ve kaynak aktifliği korundu.
+B01: COM olmadan parser 001 ve 1 kimliklerini ayrı tutuyor.

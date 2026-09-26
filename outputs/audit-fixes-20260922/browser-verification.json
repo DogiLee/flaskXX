@@ -1,0 +1,17 @@
+{
+  "date": "2026-09-22",
+  "environment": "127.0.0.1:5017; synthetic 89-card fixture; temporary storage",
+  "method": "Observed UI actions through browser tool; manual evidence, not additional automated tests",
+  "checks": [
+    {"name": "fresh admin edit", "result": "saved"},
+    {"name": "stale admin form after note in second tab", "result": "conflict displayed; form remained open; newer note preserved"},
+    {"name": "real COM import preview and apply", "result": "preview displayed; apply reported 1 new, 88 updated, 1 inactive"},
+    {"name": "ELDE planned filter", "result": "2 matching cards, badge 2"},
+    {"name": "planned pagination", "result": "36 matches; second page displayed 12 cards"},
+    {"name": "all time deliveries", "result": "8 jobs, 40 units, 8 rows"},
+    {"name": "custom range survives reload", "result": "18.09.2026–18.09.2026; TEST-1021 single result"},
+    {"name": "Turkish search", "result": "TEST VERİSİ matched 73 active fixture cards"},
+    {"name": "mobile panel width", "viewport_requested": {"width": 390, "height": 844}, "document_client_width": 375, "document_scroll_width": 375},
+    {"name": "final panel broken images", "count": 0}
+  ]
+}

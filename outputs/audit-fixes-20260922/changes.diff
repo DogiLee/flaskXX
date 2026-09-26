@@ -1,0 +1,1116 @@
+--- before/app.py
++++ after/app.py
+@@ -12,6 +12,7 @@
+ from __future__ import annotations
+ 
+ import json
++import hashlib
+ import logging
+ import logging.handlers
+ import os
+@@ -341,6 +342,7 @@
+ 
+     session["rol"] = kayit.get("rol") or session.get("rol")
+     session["ad"] = kayit.get("ad") or session.get("ad")
++    session["operator_tipi"] = kayit.get("operator_tipi")
+     return None
+ 
+ 
+@@ -349,6 +351,8 @@
+         @wraps(fn)
+         def ic(*args, **kwargs):
+             if "kullanici" not in session:
++                if request.path.startswith("/api/"):
++                    return jsonify(hata="Oturum sona erdi. İşlem kaydedilmedi; tekrar giriş yapın."), 401
+                 return redirect(url_for("giris", devam=request.path))
+             if roller and session.get("rol") not in roller:
+                 return render_template("yetkisiz.html"), 403
+@@ -725,14 +729,14 @@
+         [k for k in kartlar if k["durum"] == depo.TESLIM_EDILDI],
+         key=lambda k: k.get("teslim_zamani") or k.get("gerceklesen_teslim") or "",
+         reverse=True,
+-    )[:20]
++    )
+ 
+     return render_template(
+         "panel.html",
+         sayac=veri["sayac"],
+         guncelleme=veri["guncelleme"],
+         dizgide=[k for k in kartlar if k["durum"] == depo.DIZGIDE],
+-        plana_alindi=[k for k in kartlar if k["durum"] == depo.PLANA_ALINDI][:12],
++        plana_alindi=[k for k in kartlar if k["durum"] == depo.PLANA_ALINDI],
+         teslim_edilen=teslim_edilen,
+     )
+ 
+@@ -949,7 +953,10 @@
+     veri = request.get_json(silent=True) or {}
+ 
+     def islem():
++        if not isinstance(veri.get("surum"), str) or not veri["surum"]:
++            raise depo.IsKuralHatasi("Formun sürüm bilgisi eksik. Sayfayı yenileyip tekrar deneyin.")
+         kart = depo.admin_kart_duzenle(
++            beklenen_surum=veri["surum"],
+             kart_id=veri.get("kart_id"),
+             durum=veri.get("durum"),
+             tamamlanan_adet=veri.get("tamamlanan_adet"),
+@@ -1071,6 +1078,14 @@
+     dosya.save(yol)
+ 
+     try:
++        if request.form.get("onizleme") == "1":
++            session.pop("import_onizleme", None)
++            sonuc = ex.excelden_aktar(yol, session["kullanici"], onizleme=True)
++            with open(yol, "rb") as kaynak:
++                dosya_hash = hashlib.file_digest(kaynak, "sha256").hexdigest()
++            session["import_onizleme"] = {"dosya": kayit_adi, "hash": dosya_hash,
++                "surum": sonuc["surum"], "kaynak_surum": sonuc["kaynak_surum"]}
++            return render_template("import_onizleme.html", sonuc=sonuc, dosya=guvenli_ad)
+         sonuc = ex.excelden_aktar(yol, session["kullanici"])
+         mesaj = (
+             f"Excel aktarıldı · {sonuc['satir']} satır · {sonuc['yeni']} yeni · "
+@@ -1104,6 +1119,30 @@
+         app.logger.exception("Excel import sırasında beklenmeyen hata")
+         flash("Excel okunurken beklenmeyen bir hata oluştu. Uygulama logunu kontrol edin.", "hata")
+ 
++    return redirect(url_for("yonetim"))
++
++
++@app.route("/yonetim/yukle-onay", methods=["POST"])
++@yetki("admin")
++@csrf_koru
++def yukle_onay():
++    bekleyen = session.pop("import_onizleme", None)
++    try:
++        if not bekleyen or not bekleyen.get("kaynak_surum"):
++            raise depo.IsKuralHatasi("Önizleme bulunamadı veya daha önce kullanıldı. Dosyayı yeniden seçin.")
++        yol = os.path.join(YUKLEME_KLASORU, os.path.basename(bekleyen["dosya"]))
++        with open(yol, "rb") as kaynak:
++            if hashlib.file_digest(kaynak, "sha256").hexdigest() != bekleyen["hash"]:
++                raise depo.IsKuralHatasi("Dosya önizlemeden sonra değişti. Dosyayı yeniden seçin.")
++        sonuc = ex.excelden_aktar(yol, session["kullanici"], beklenen_surum=bekleyen["surum"],
++                                 beklenen_kaynak_surum=bekleyen["kaynak_surum"])
++    except (depo.DepoHatasi, ex.ExcelAktarimHatasi, OSError) as hata:
++        return render_template("import_onizleme.html", hata=str(hata)), 409
++    flash(f"Excel aktarıldı · {sonuc['yeni']} yeni · {sonuc['guncellenen']} güncellendi · "
++          f"{sonuc['pasife_alinan']} pasifleştirildi · {sonuc['uyari']} uyarı. "
++          "Durumu eksik kartları Yönetim ekranından kontrol edin.", "basari")
++    app.logger.info("Önizleme onaylandı; Excel import OK: %s", sonuc)
++    _yuklenen_exceleri_buda()
+     return redirect(url_for("yonetim"))
+ 
+ 
+@@ -1193,16 +1232,16 @@
+     return str(deger)[:10] if deger else None
+ 
+ 
+-def _donem_ozeti(kartlar, baslangic, bitis):
+-    alt = baslangic.strftime("%Y-%m-%d")
+-    ust = bitis.strftime("%Y-%m-%d")
++def _donem_ozeti(kartlar, baslangic=None, bitis=None):
++    alt = baslangic.strftime("%Y-%m-%d") if baslangic else None
++    ust = bitis.strftime("%Y-%m-%d") if bitis else None
+     secilen = []
+ 
+     for kart in kartlar:
+         if kart.get("durum") != depo.TESLIM_EDILDI:
+             continue
+         teslim = _teslim_tarihi(kart)
+-        if teslim and alt <= teslim <= ust:
++        if alt is None or (teslim and alt <= teslim <= ust):
+             secilen.append(kart)
+ 
+     sapmalar = [kart["sapma"] for kart in secilen if kart["sapma"] is not None]
+@@ -1365,7 +1404,7 @@
+         kartlar = [k for k in kartlar if k.get("dizgi_kod") == "EUM"]
+ 
+     if alt is None:
+-        donem_ozet = _donem_ozeti(kartlar, date(2000, 1, 1), date.today())
++        donem_ozet = _donem_ozeti(kartlar)
+         secilenler = [k for k in kartlar if k["durum"] == depo.TESLIM_EDILDI]
+     else:
+         donem_ozet = _donem_ozeti(kartlar, alt, ust)
+@@ -1388,6 +1427,8 @@
+         teslim_edilen=[
+             {
+                 "talep_no": k.get("talep_no"),
++                "talep_sahibi": k.get("talep_sahibi"),
++                "aciklama": k.get("aciklama"),
+                 "stok_no": k.get("stok_no"),
+                 "toplam_adet": k.get("toplam_adet"),
+                 "plan_baslama": gun_filtresi(k.get("plan_baslama")),
+@@ -1401,7 +1442,7 @@
+                 "dizgi_etiket": k.get("dizgi_etiket", "Makine"),
+                 "dizgi_sorumlusu": k.get("dizgi_sorumlusu"),
+             }
+-            for k in secilenler[:200]
++            for k in secilenler
+         ],
+     )
+ 
+--- before/depo.py
++++ after/depo.py
+@@ -18,6 +18,7 @@
+ 
+ import atexit
+ import copy
++import hashlib
+ import json
+ import os
+ import re
+@@ -250,6 +251,21 @@
+     return str(deger or "").strip()
+ 
+ 
++def _tam_sayi(deger):
++    """İşlem adetlerini yuvarlamaz; bool ve kesirli değerleri reddeder."""
++    if isinstance(deger, bool) or not re.fullmatch(r"[+-]?\d+", str(deger).strip()):
++        raise ValueError("Adet tam sayı olmalı; kesirli değer kabul edilmez.")
++    return int(deger)
++
++
++def kart_surumu(kart):
++    """Aynı saniyedeki değişiklikleri ve yeniden importu da algılar."""
++    veri = {alan: (kart.get(alan) if kart.get(alan) != "" else None)
++            for _, alan in KART_ALANLARI}
++    return hashlib.sha256(json.dumps(veri, sort_keys=True, ensure_ascii=False,
++                                     default=str).encode("utf-8")).hexdigest()
++
++
+ def _kart_notu_ekle(mevcut, metin, isim):
+     """Yeni notu tarih + operatör ismiyle mevcut nota ekler; eski notlar korunur.
+ 
+@@ -486,6 +502,11 @@
+ 
+ def _excel_hucre_yaz(hucre, deger):
+     """'=' ile başlayan kullanıcı metninin Excel formülüne dönüşmesini engeller."""
++    if isinstance(deger, str) and len(deger) > 32767:
++        raise VeriDogrulamaHatasi(
++            "Metin/not geçmişi Excel'in 32.767 karakter sınırını aşıyor. "
++            "İşlem kaydedilmedi; mevcut kayıt korundu. Daha kısa bir metin girin."
++        )
+     hucre.value = deger
+ 
+     if isinstance(deger, str) and deger.startswith("="):
+@@ -1313,6 +1334,7 @@
+ 
+ def kart_gorunumu(kart):
+     d = copy.deepcopy(kart)
++    d["surum"] = kart_surumu(kart)
+     d.update(durum_bilgisi(kart))
+     d["toplam_adet"] = d.get("toplam_adet") or 1
+     d["tamamlanan_adet"] = d.get("tamamlanan_adet") or 0
+@@ -1471,7 +1493,7 @@
+         if adet in (None, ""):
+             adet = kart["toplam_adet"]
+         try:
+-            adet = int(adet)
++            adet = _tam_sayi(adet)
+         except (TypeError, ValueError) as exc:
+             raise ValueError("Adet sayı olmalı.") from exc
+         if adet < 1 or adet > kart["toplam_adet"]:
+@@ -1558,7 +1580,7 @@
+             raise IsKuralHatasi("Üretim adedi zaten tamamlandı. Kartı HAZIR durumuna alın.")
+ 
+         try:
+-            adet = int(adet)
++            adet = _tam_sayi(adet)
+         except (TypeError, ValueError) as exc:
+             raise ValueError("Adet sayı olmalı.") from exc
+         if adet < 1 or adet > kalan:
+@@ -1743,7 +1765,7 @@
+         raise IsKuralHatasi("Kart Stok No boş olamaz.")
+ 
+     try:
+-        toplam = int(toplam_adet)
++        toplam = _tam_sayi(toplam_adet)
+     except (TypeError, ValueError) as exc:
+         raise ValueError("Toplam adet sayı olmalı.") from exc
+     if toplam < 1:
+@@ -1842,6 +1864,7 @@
+     dizgi_tipi=None,
+     dizgi_sorumlusu=None,
+     malzeme_bekliyor=None,
++    beklenen_surum=None,
+ ):
+     """Admin workflow ve plan alanlarını kontrollü biçimde düzeltir.
+ 
+@@ -1860,13 +1883,18 @@
+         if not kart:
+             raise KartBulunamadi("Kart bulunamadı.")
+ 
++        if beklenen_surum is not None and beklenen_surum != kart_surumu(kart):
++            raise IsKuralHatasi(
++                "Kart siz formu açtıktan sonra değişti. Kaydedilmedi. "
++                "Girdiğiniz metni kopyalayın, sayfayı yenileyip güncel kaydı kontrol edin."
++            )
+         yeni_durum = _durum_normalize(durum)
+         if yeni_durum not in GECERLI_DURUMLAR:
+             raise IsKuralHatasi("Durum PLANA ALINDI, DİZGİDE, HAZIR veya TESLİM EDİLDİ olmalı.")
+ 
+         try:
+-            toplam = int(kart["toplam_adet"] if toplam_adet in (None, "") else toplam_adet)
+-            tamamlanan = int(
++            toplam = _tam_sayi(kart["toplam_adet"] if toplam_adet in (None, "") else toplam_adet)
++            tamamlanan = _tam_sayi(
+                 kart["tamamlanan_adet"] if tamamlanan_adet in (None, "") else tamamlanan_adet
+             )
+         except (TypeError, ValueError) as exc:
+@@ -2166,17 +2194,38 @@
+     return harita
+ 
+ 
+-def excel_import_uygula(dosya_adi, kullanici, satirlar, uyari_sayisi=0):
++def depo_surumu():
++    with _kilit:
++        return hashlib.sha256("|".join(kart_surumu(k) for k in _kartlar).encode()).hexdigest()
++
++
++def excel_import_onizle(**veri):
++    """Aynı merge algoritmasını yalıtılmış bellek kopyasında, yazmadan çalıştırır."""
++    global _kartlar, _loglar, _yuklemeler
++    with _kilit:
++        asil = (_kartlar, _loglar, _yuklemeler)
++        _kartlar, _loglar, _yuklemeler = copy.deepcopy(asil)
++        try:
++            return excel_import_uygula(**veri, sadece_onizleme=True)
++        finally:
++            _kartlar, _loglar, _yuklemeler = asil
++
++
++def excel_import_uygula(dosya_adi, kullanici, satirlar, uyari_sayisi=0,
++                       sadece_onizleme=False, beklenen_surum=None):
+     """Tamamen parse/validate edilmiş kaynak satırlarını tek transaction-benzeri blokta uygular."""
+     global _kartlar, _loglar, _yuklemeler
+ 
+     with _kilit:
++        onceki_surum = depo_surumu()
++        if beklenen_surum is not None and beklenen_surum != onceki_surum:
++            raise IsKuralHatasi("Önizlemeden sonra kartlar değişti. Güncel etkiyi görmek için dosyayı yeniden seçin.")
+         eski_kartlar = copy.deepcopy(_kartlar)
+         eski_loglar = copy.deepcopy(_loglar)
+         eski_yuklemeler = copy.deepcopy(_yuklemeler)
+ 
+         try:
+-            yedek_klasoru = anlik_yedek("import_oncesi")
++            yedek_klasoru = None if sadece_onizleme else anlik_yedek("import_oncesi")
+             mevcut_harita = _import_eslesmelerini_bul(satirlar)
+             gorulen = set()
+             yeni = 0
+@@ -2314,6 +2363,24 @@
+ 
+             _kart_listesi_dogrula(_kartlar)
+ 
++            if sadece_onizleme:
++                oncekiler = {k["id"]: k for k in eski_kartlar}
++                alanlar = [(baslik, alan) for baslik, alan in KART_ALANLARI if alan in {
++                    "talep_no", "stok_no", "talep_sahibi", "toplam_adet", "tamamlanan_adet",
++                    "durum", "plan_baslama", "plan_teslim", "gerceklesen_teslim", "source_active",
++                    "pcb", "dizgi_tipi", "dizgi_sorumlusu", "malzeme_bekliyor", "plan_hafta"}]
++                degisiklikler = []
++                for kart in _kartlar:
++                    onceki = oncekiler.get(kart["id"], {})
++                    farklar = [{"alan": baslik, "eski": onceki.get(alan), "yeni": kart.get(alan)}
++                               for baslik, alan in alanlar if onceki.get(alan) != kart.get(alan)]
++                    if farklar:
++                        degisiklikler.append({"id": kart["id"], "talep_no": kart.get("talep_no"),
++                            "stok_no": kart.get("stok_no"), "yeni": not onceki, "farklar": farklar})
++                return {"surum": onceki_surum, "satir": len(satirlar), "yeni": yeni,
++                        "pasife_alinan": pasife_alinan, "degisiklikler": degisiklikler,
++                        "uyari": uyari_sayisi}
++
+             _yuklemeler.append(
+                 {
+                     "zaman": simdi(),
+--- before/excel_araclari.py
++++ after/excel_araclari.py
+@@ -25,7 +25,9 @@
+ from __future__ import annotations
+ 
+ import gc
++import hashlib
+ import io
++import json
+ import os
+ import re
+ import tempfile
+@@ -163,13 +165,13 @@
+     hedef_sutun = 1
+ 
+     for kaynak_sutun in range(ilk_sutun, son_sutun + 1):
++        kimlik_sutunu = any(
++            _sadelestir(kaynak_ws.Cells(r, kaynak_sutun).Value2) in {"NO", "PDGM ROW ID"}
++            for r in range(ilk_satir, min(son_satir, 10) + 1)
++        )
+         if bool(kaynak_ws.Columns(kaynak_sutun).Hidden):
+             # Kalıcı kimlik gizli olsa da snapshot'tan düşürülmez.
+-            kimlik_basliklari = {"NO", "PDGM ROW ID"}
+-            if not any(
+-                _sadelestir(kaynak_ws.Cells(r, kaynak_sutun).Value2) in kimlik_basliklari
+-                for r in range(ilk_satir, min(son_satir, 10) + 1)
+-            ):
++            if not kimlik_sutunu:
+                 continue
+ 
+         kaynak_aralik = kaynak_ws.Range(
+@@ -180,6 +182,10 @@
+             hedef_ws.Cells(ilk_satir, hedef_sutun),
+             hedef_ws.Cells(son_satir, hedef_sutun),
+         )
++        # General biçimi metinsel '001' ve uzun sayısal kimlikleri dönüştürür.
++        # Değerleri yazmadan önce yalnız kimlik sütununun hedefini metin yap.
++        if kimlik_sutunu:
++            hedef_aralik.NumberFormat = "@"
+         hedef_aralik.Value2 = kaynak_aralik.Value2
+         hedef_sutun += 1
+ 
+@@ -610,12 +616,12 @@
+     return uyari_sayisi
+ 
+ 
+-def excelden_aktar(dosya_yolu, kullanici):
++def excelden_aktar(dosya_yolu, kullanici, onizleme=False, beklenen_surum=None, beklenen_kaynak_surum=None):
+     with _import_kilidi:
+-        return _excelden_aktar(dosya_yolu, kullanici)
+-
+-
+-def _excelden_aktar(dosya_yolu, kullanici):
++        return _excelden_aktar(dosya_yolu, kullanici, onizleme, beklenen_surum, beklenen_kaynak_surum)
++
++
++def _excelden_aktar(dosya_yolu, kullanici, onizleme=False, beklenen_surum=None, beklenen_kaynak_surum=None):
+     snapshot_yolu = None
+     wb = None
+ 
+@@ -665,12 +671,23 @@
+             except OSError:
+                 pass
+ 
+-    return depo.excel_import_uygula(
++    # Dosya baytları aynı kalsa bile Excel formülleri yeniden hesaplanabilir.
++    kaynak_surum = hashlib.sha256(json.dumps(parsed, sort_keys=True, ensure_ascii=False,
++                                            default=str).encode("utf-8")).hexdigest()
++    if beklenen_kaynak_surum is not None and kaynak_surum != beklenen_kaynak_surum:
++        raise ExcelAktarimHatasi("Excel'in hesaplanan değerleri önizlemeden sonra değişti. Yeni önizleme oluşturun.")
++    uygula = depo.excel_import_onizle if onizleme else depo.excel_import_uygula
++    secenekler = {"beklenen_surum": beklenen_surum} if beklenen_surum is not None else {}
++    sonuc = uygula(
+         dosya_adi=os.path.basename(dosya_yolu),
+         kullanici=kullanici,
+         satirlar=parsed,
+         uyari_sayisi=uyari_sayisi,
++        **secenekler,
+     )
++    if onizleme:
++        sonuc["kaynak_surum"] = kaynak_surum
++    return sonuc
+ 
+ 
+ # ---------------------------------------------------------------------------
+--- before/templates/base.html
++++ after/templates/base.html
+@@ -5,14 +5,14 @@
+     <meta name="viewport" content="width=device-width, initial-scale=1">
+     <meta name="csrf-token" content="{{ csrf_token }}">
+     <title>{% block title %}PDGM İş Takip{% endblock %}</title>
+-    <link rel="stylesheet" href="{{ url_for('static', filename='stil.css') }}?v=20260914a">
++    <link rel="stylesheet" href="{{ url_for('static', filename='stil.css') }}?v=20260922">
+     {% block head %}{% endblock %}
+ </head>
+ <body class="{% block body_class %}{% endblock %}">
+ <header class="ust-cubuk">
+     <a href="{{ url_for('ana') }}" class="marka-link">
+         <span class="marka-isaret">
+-            <img src="{{ url_for('static', filename='pdgm_logo.png') }}" alt="PDGM" class="marka-logo">
++            <strong class="marka-yazi">PDGM</strong>
+         </span>
+         <span class="marka-metin">
+             <strong>Prototip Kart Dizgi Atölyesi</strong>
+@@ -72,6 +72,10 @@
+     return document.querySelector('meta[name="csrf-token"]')?.content || "";
+ }
+ 
++function aramaMetni(deger) {
++    return String(deger || "").normalize("NFC").toLocaleLowerCase("tr-TR").normalize("NFC").trim();
++}
++
+ async function pdgmFetch(url, options = {}) {
+     const headers = new Headers(options.headers || {});
+     headers.set("X-CSRF-Token", csrfToken());
+@@ -82,9 +86,13 @@
+ 
+     const response = await fetch(url, {credentials: "same-origin", ...options, headers});
+     const contentType = response.headers.get("content-type") || "";
+-    const data = contentType.includes("application/json")
+-        ? await response.json()
+-        : {hata: await response.text()};
++    if (response.status === 401 || response.redirected) {
++        throw new Error("Oturum sona erdi. İşlem kaydedilmedi; tekrar giriş yapın.");
++    }
++    if (!contentType.includes("application/json")) {
++        throw new Error("Sunucudan beklenmeyen yanıt alındı. İşlemin kaydedildiği doğrulanamadı.");
++    }
++    const data = await response.json();
+ 
+     if (!response.ok) {
+         throw new Error(data.hata || data.detail || "İşlem tamamlanamadı.");
+--- before/templates/giris.html
++++ after/templates/giris.html
+@@ -9,7 +9,7 @@
+ <body class="giris-sayfa">
+ <main class="giris-kutu">
+     <div class="giris-logo">
+-        <img src="{{ url_for('static', filename='pdgm_logo.png') }}" alt="PDGM Logo">
++        <strong class="marka-yazi">PDGM</strong>
+     </div>
+ 
+     <h1>PDGM İŞ TAKİP</h1>
+--- before/templates/import_onizleme.html
++++ after/templates/import_onizleme.html
+@@ -0,0 +1,31 @@
++{% extends "base.html" %}
++{% block title %}Import Önizleme · PDGM İş Takip{% endblock %}
++{% block content %}
++<section class="panel-kutu">
++    <h1>Excel Aktarım Önizlemesi</h1>
++    {% if hata %}
++    <p class="bildirim hata" role="alert">{{ hata }}</p>
++    {% else %}
++    <p><strong>{{ dosya }}</strong> · {{ sonuc.satir }} satır · {{ sonuc.yeni }} yeni kart · {{ sonuc.pasife_alinan }} kart pasifleşecek · {{ sonuc.uyari }} veri uyarısı</p>
++    <p>Henüz kayıt değiştirilmedi. Aşağıdaki durum, adet ve tarih değişikliklerini kontrol edin. Notlar korunur. Boş veya geçersiz kaynak durumları Yönetim ekranında kontrol gerektirebilir.</p>
++    <div class="tablo-kapsayici">
++        <table>
++            <thead><tr><th>Kart</th><th>Alan</th><th>Değişiklik</th></tr></thead>
++            <tbody>
++            {% for k in sonuc.degisiklikler %}
++                {% for f in k.farklar %}
++                <tr><td>{{ k.talep_no }} · {{ k.stok_no }} · #{{ k.id }}{% if k.yeni %} (yeni){% endif %}</td>
++                    <td>{{ f.alan }}</td><td>{{ f.eski if f.eski is not none else '—' }} → {{ f.yeni if f.yeni is not none else '—' }}</td></tr>
++                {% endfor %}
++            {% else %}<tr><td colspan="3">Kart alanlarında değişiklik yok.</td></tr>{% endfor %}
++            </tbody>
++        </table>
++    </div>
++    <form action="{{ url_for('yukle_onay') }}" method="post" class="sayfalama">
++        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
++        <button class="buton buton-ana" type="submit">Değişiklikleri Uygula</button>
++    </form>
++    {% endif %}
++    <a class="buton buton-hayalet" href="{{ url_for('yonetim') }}">Yönetime Dön</a>
++</section>
++{% endblock %}
+--- before/templates/operator.html
++++ after/templates/operator.html
+@@ -50,7 +50,7 @@
+                  data-kart
+                  data-durum="{{ k.durum }}"
+                  data-dizgi-tipi="{{ k.dizgi_kod }}"
+-                 data-arama="{{ ((k.talep_no or '') ~ ' ' ~ (k.stok_no or '') ~ ' ' ~ (k.talep_sahibi or '') ~ ' ' ~ (k.pcb or '') ~ ' ' ~ (k.operator or '') ~ ' ' ~ (k.aciklama or '') ~ ' ' ~ (k.dizgi_sorumlusu or ''))|lower }}">
++                 data-arama="{{ ((k.talep_no or '') ~ ' ' ~ (k.stok_no or '') ~ ' ' ~ (k.talep_sahibi or '') ~ ' ' ~ (k.pcb or '') ~ ' ' ~ (k.operator or '') ~ ' ' ~ (k.aciklama or '') ~ ' ' ~ (k.dizgi_sorumlusu or '')) }}">
+                  
+ 
+             <div class="operator-kart-ust">
+@@ -264,13 +264,13 @@
+     }
+ 
+     function filtrele() {
+-        const arama = (kartAra.value || "").trim().toLocaleLowerCase("tr-TR");
++        const arama = aramaMetni(kartAra.value);
+         let gorunen = 0;
+ 
+         for (const kart of kartlar) {
+             const uygun = durumUygunMu(kart.dataset.durum)
+                 && dizgiUygunMu(kart.dataset.dizgiTipi)
+-                && (!arama || kart.dataset.arama.includes(arama));
++                && (!arama || aramaMetni(kart.dataset.arama).includes(arama));
+             kart.hidden = !uygun;
+             if (uygun) gorunen += 1;
+         }
+--- before/templates/panel.html
++++ after/templates/panel.html
+@@ -81,7 +81,7 @@
+             {% for k in dizgide %}
+             <article class="is-karti panel-is-karti {{ k.renk }}" data-panel-kart data-durum="DİZGİDE"
+                      data-dizgi-tipi="{{ k.dizgi_kod }}"
+-                     data-arama="{{ ((k.talep_no or '') ~ ' ' ~ (k.stok_no or '') ~ ' ' ~ (k.talep_sahibi or '') ~ ' ' ~ (k.operator or '') ~ ' ' ~ (k.aciklama or '') ~ ' ' ~ (k.pcb or '') ~ ' ' ~ (k.dizgi_sorumlusu or ''))|lower }}">
++                     data-arama="{{ ((k.talep_no or '') ~ ' ' ~ (k.stok_no or '') ~ ' ' ~ (k.talep_sahibi or '') ~ ' ' ~ (k.operator or '') ~ ' ' ~ (k.aciklama or '') ~ ' ' ~ (k.pcb or '') ~ ' ' ~ (k.dizgi_sorumlusu or '')) }}">
+                      
+                 <div class="is-karti-ust">
+                     <div>
+@@ -120,7 +120,7 @@
+             <div>
+                 <p class="ust-etiket">ÜRETİM SIRASI</p>
+                 <h2>Plana Alınan İşler</h2>
+-                <p class="panel-aciklama">Dizgiye alınmayı bekleyen ilk 12 kart.</p>
++                <p class="panel-aciklama">Dizgiye alınmayı bekleyen kartlar; arama ve filtreler tüm kayıtları kapsar.</p>
+             </div>
+             <span class="sayi-rozet">{{ plana_alindi|length }}</span>
+         </div>
+@@ -133,7 +133,7 @@
+                 {% for k in plana_alindi %}
+                     <tr data-panel-kart data-durum="PLANA ALINDI"
+                         data-dizgi-tipi="{{ k.dizgi_kod }}"                    
+-                        data-arama="{{ ((k.talep_no or '') ~ ' ' ~ (k.stok_no or '') ~ ' ' ~ (k.talep_sahibi or '') ~ ' ' ~ (k.pcb or '') ~ ' ' ~ (k.dizgi_sorumlusu or ''))|lower }}">
++                        data-arama="{{ ((k.talep_no or '') ~ ' ' ~ (k.stok_no or '') ~ ' ' ~ (k.talep_sahibi or '') ~ ' ' ~ (k.pcb or '') ~ ' ' ~ (k.dizgi_sorumlusu or '')) }}">
+                         <td><strong>{{ k.talep_no or "—" }}</strong></td>
+                         <td>{{ k.stok_no or "—" }}</td>
+                         <td>{{ k.talep_sahibi or "—" }}</td>
+@@ -215,7 +215,7 @@
+                 {% for k in teslim_edilen %}
+                 <tr data-panel-kart data-durum="TESLİM EDİLDİ"
+                     data-dizgi-tipi="{{ k.dizgi_kod }}"
+-                    data-arama="{{ ((k.talep_no or '') ~ ' ' ~ (k.stok_no or '') ~ ' ' ~ (k.talep_sahibi or '') ~ ' ' ~ (k.operator or '') ~ ' ' ~ (k.aciklama or '') ~ ' ' ~ (k.dizgi_sorumlusu or ''))|lower }}">
++                    data-arama="{{ ((k.talep_no or '') ~ ' ' ~ (k.stok_no or '') ~ ' ' ~ (k.talep_sahibi or '') ~ ' ' ~ (k.operator or '') ~ ' ' ~ (k.aciklama or '') ~ ' ' ~ (k.dizgi_sorumlusu or '')) }}">
+                     <td><strong>{{ k.talep_no or "—" }}</strong></td>
+                     <td>{{ k.stok_no or "—" }}</td>
+                     <td>{{ k.toplam_adet }}</td>
+@@ -254,9 +254,25 @@
+     const ARAMA_KEY = "pdgm-panel-arama";
+     const SCROLL_KEY = "pdgm-panel-scroll";
+     const DONEM_KEY = "pdgm-panel-donem";
++    const TARIH_KEY = "pdgm-panel-tarihler";
+ 
+     let aktifFiltre = sessionStorage.getItem(FILTRE_KEY) || "HEPSI";
+     let aktifDizgiFiltre = sessionStorage.getItem(DIZGI_FILTRE_KEY) || "HEPSI";
++    const sayfalar = new Map();
++    bolumler.forEach((bolum) => {
++        const nav = document.createElement("nav");
++        nav.className = "sayfalama";
++        nav.setAttribute("aria-label", `${bolum.dataset.durum} sayfalama`);
++        const onceki = document.createElement("button"), sonraki = document.createElement("button");
++        const bilgi = document.createElement("span");
++        onceki.textContent = "Önceki"; sonraki.textContent = "Sonraki";
++        [onceki, sonraki].forEach(b => { b.type = "button"; b.className = "buton buton-kucuk buton-hayalet"; });
++        nav.append(onceki, bilgi, sonraki); bolum.appendChild(nav);
++        const state = {sayfa: 0, anahtar: "", nav, onceki, sonraki, bilgi};
++        sayfalar.set(bolum, state);
++        onceki.addEventListener("click", () => { state.sayfa--; filtrele(); });
++        sonraki.addEventListener("click", () => { state.sayfa++; filtrele(); });
++    });
+ 
+     // Teslim tablosu JS ile yeniden kurulduğu için kart listesi her seferinde
+     // canlı olarak sorgulanır; sabit bir dizi tutulursa DOM'dan kopmuş
+@@ -276,25 +292,40 @@
+     }
+ 
+     function filtrele() {
+-        const metin = (arama.value || "").trim().toLocaleLowerCase("tr-TR");
++        const metin = aramaMetni(arama.value);
+         let gorunen = 0;
+ 
+         tumKartlar().forEach((kart) => {
+             const uygun = durumUygun(kart.dataset.durum)
+                 && dizgiUygun(kart.dataset.dizgiTipi)
+-                && (!metin || (kart.dataset.arama || "").includes(metin));
++                && (!metin || aramaMetni(kart.dataset.arama).includes(metin));
+             kart.hidden = !uygun;
+             if (uygun) gorunen += 1;
+         });
+ 
++        let gosterilen = 0;
+         bolumler.forEach((bolum) => {
+             const bolumKartlari = [...bolum.querySelectorAll("[data-panel-kart]")];
++            const uygunlar = bolumKartlari.filter(k => !k.hidden);
++            const sayac = bolum.querySelector(".panel-baslik .sayi-rozet");
++            if (sayac) sayac.textContent = uygunlar.length;
+             const bolumDurumUygun = durumUygun(bolum.dataset.durum);
+             bolum.hidden = !bolumDurumUygun
+-                || (bolumKartlari.length > 0 && !bolumKartlari.some((kart) => !kart.hidden));
+-        });
+-
+-        sonuc.textContent = gorunen ? `${gorunen} kart gösteriliyor` : "Sonuç bulunamadı";
++                || (bolumKartlari.length > 0 && !uygunlar.length);
++            const state = sayfalar.get(bolum);
++            const anahtar = `${metin}|${aktifFiltre}|${aktifDizgiFiltre}|${uygunlar.length}`;
++            if (state.anahtar !== anahtar) state.sayfa = 0;
++            state.anahtar = anahtar;
++            const sonSayfa = Math.max(0, Math.ceil(uygunlar.length / 12) - 1);
++            state.sayfa = Math.max(0, Math.min(state.sayfa, sonSayfa));
++            uygunlar.forEach((kart, i) => { kart.hidden = Math.floor(i / 12) !== state.sayfa; if (!kart.hidden) gosterilen++; });
++            state.nav.hidden = uygunlar.length <= 12;
++            state.onceki.disabled = state.sayfa === 0;
++            state.sonraki.disabled = state.sayfa === sonSayfa;
++            state.bilgi.textContent = `${state.sayfa + 1} / ${sonSayfa + 1} sayfa · ${uygunlar.length} eşleşme`;
++        });
++
++        sonuc.textContent = gorunen ? `${gosterilen} / ${gorunen} kart gösteriliyor` : "Sonuç bulunamadı";
+         bos.hidden = gorunen !== 0;
+         temizle.hidden = !metin && aktifFiltre === "HEPSI" && aktifDizgiFiltre === "HEPSI";
+     }
+@@ -402,6 +433,12 @@
+     const donemVeriUyari = document.getElementById("donem-veri-uyari");
+ 
+     let aktifDonem = sessionStorage.getItem(DONEM_KEY) || "tumu";
++    let donemIstek = 0;
++    try {
++        const tarihler = JSON.parse(sessionStorage.getItem(TARIH_KEY) || "{}");
++        donemBaslangic.value = tarihler.baslangic || "";
++        donemBitis.value = tarihler.bitis || "";
++    } catch (_) { sessionStorage.removeItem(TARIH_KEY); }
+ 
+     // -- gg.aa.yyyy maskeleme yardımcıları -------------------------------
+     function tarihMaskele(input) {
+@@ -416,7 +453,10 @@
+     }
+ 
+     function ggAaYyyyGecerliMi(deger) {
+-        return /^\d{2}\.\d{2}\.\d{4}$/.test(deger || "");
++        if (!/^\d{2}\.\d{2}\.\d{4}$/.test(deger || "")) return false;
++        const [g,a,y] = deger.split(".").map(Number);
++        const tarih = new Date(y, a - 1, g);
++        return tarih.getFullYear() === y && tarih.getMonth() === a - 1 && tarih.getDate() === g;
+     }
+ 
+     function isoyaCevir(deger) {
+@@ -448,10 +488,9 @@
+     satir.setAttribute("data-panel-kart", "");
+     satir.dataset.durum = "TESLİM EDİLDİ";
+     satir.dataset.dizgiTipi = k.dizgi_kod || (k.elle_dizgi_mi ? "ELLE" : "MAKINE");
+-    satir.dataset.arama = [k.talep_no, k.stok_no, k.operator, k.dizgi_sorumlusu]
++    satir.dataset.arama = [k.talep_no, k.stok_no, k.talep_sahibi, k.aciklama, k.operator, k.dizgi_sorumlusu]
+         .filter(Boolean)
+-        .join(" ")
+-        .toLocaleLowerCase("tr-TR");
++        .join(" ");
+ 
+     const talepTd = document.createElement("td");
+     const strong = document.createElement("strong");
+@@ -482,13 +521,16 @@
+ }
+ 
+ async function donemYukle(aralik, sessizce = false) {
++        const istek = ++donemIstek;
+         const params = new URLSearchParams({aralik, dizgi: aktifDizgiFiltre});
++        const baslangic = donemBaslangic.value, bitis = donemBitis.value;
+ 
+         if (aralik === "ozel") {
+-            if (!ggAaYyyyGecerliMi(donemBaslangic.value) || !ggAaYyyyGecerliMi(donemBitis.value)) {
++            if (!ggAaYyyyGecerliMi(baslangic) || !ggAaYyyyGecerliMi(bitis) || isoyaCevir(baslangic) > isoyaCevir(bitis)) {
+                 if (!sessizce) {
+-                    toast("Tarihleri gg.aa.yyyy biçiminde girin (örn. 05.03.2026).", "uyari");
++                    toast("Geçerli bir başlangıç ve bitiş tarihi girin; başlangıç bitişten sonra olamaz.", "uyari");
+                 }
++                donemTemizle("Tarih aralığını girip Uygula'ya basın.");
+                 return;
+             }
+             
+@@ -496,8 +538,11 @@
+             params.set("bitis", isoyaCevir(donemBitis.value));
+         }
+ 
++        donemTemizle("Teslim verileri yükleniyor…");
+         try {
+             const data = await pdgmFetch(`/api/panel/teslimler?${params.toString()}`);
++            if (istek !== donemIstek) return;
++            if (aralik === "ozel") sessionStorage.setItem(TARIH_KEY, JSON.stringify({baslangic, bitis}));
+             const liste = data.teslim_edilen || [];
+ 
+             donemTabloGovde.replaceChildren();
+@@ -522,14 +567,26 @@
+             const olculemeyen = o.kart - o.sapma_olculen;
+             donemVeriUyari.hidden = !olculemeyen;
+             donemVeriUyari.textContent = olculemeyen
+-                ? `${olculemeyen} iş emrinde plan teslim tarihi girilmediği için sapma hesaplanamadı; ` +
++                ? `${olculemeyen} iş emrinde plan veya gerçekleşen teslim tarihi eksik olduğu için sapma hesaplanamadı; ` +
+                   `yüzde yalnız ${o.sapma_olculen} iş emri üzerinden hesaplandı.`
+                 : "";
+ 
+             filtrele();
+         } catch (hata) {
++            if (istek !== donemIstek) return;
++            donemTemizle("Veriler yüklenemedi; tekrar deneyin.");
+             hataMesaji(hata);
+         }
++    }
++
++    function donemTemizle(mesaj) {
++        donemTabloGovde.replaceChildren();
++        donemSayi.textContent = "—";
++        [donemMetrikIs, donemMetrikAdetAlt, donemMetrikZamaninda, donemMetrikZamanindaAlt,
++         donemMetrikGecikme, donemMetrikGecikmeAlt, donemMetrikSapma].forEach(e => e.textContent = "—");
++        donemVeriUyari.hidden = false;
++        donemVeriUyari.textContent = mesaj;
++        filtrele();
+     }
+ 
+     function donemSec(deger) {
+@@ -543,14 +600,20 @@
+         });
+ 
+         donemOzelAlan.hidden = deger !== "ozel";
+-        if (deger !== "ozel") donemYukle(deger);
++        donemYukle(deger, true);
+     }
+ 
+     donemButonlar.forEach((buton) => {
+         buton.addEventListener("click", () => donemSec(buton.dataset.donemFiltre));
+     });
+     donemUygula.addEventListener("click", () => donemYukle("ozel"));
+-
++    [donemBaslangic, donemBitis].forEach(input => input.addEventListener("input", () => {
++        ++donemIstek;
++        donemTemizle("Yeni tarih aralığı için Uygula'ya basın.");
++    }));
++
++    if (aktifDonem === "ozel" && (!ggAaYyyyGecerliMi(donemBaslangic.value) ||
++        !ggAaYyyyGecerliMi(donemBitis.value) || isoyaCevir(donemBaslangic.value) > isoyaCevir(donemBitis.value))) aktifDonem = "tumu";
+     donemSec(donemButonlar.some((b) => b.dataset.donemFiltre === aktifDonem) ? aktifDonem : "tumu");
+ })();
+ </script>
+--- before/templates/yonetim.html
++++ after/templates/yonetim.html
+@@ -25,18 +25,21 @@
+                 </div>
+             </div>
+             <form method="post" action="{{ url_for('yukle') }}" enctype="multipart/form-data" class="yukleme-form">
++                <input type="hidden" name="onizleme" value="1">
+                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                 <label class="dosya-sec">
+                     <span>Excel dosyası seçin</span>
+                     <small>.xlsx veya .xlsm</small>
+                     <input type="file" name="dosya" accept=".xlsx,.xlsm" required>
+                 </label>
+-                <button class="buton buton-ana" type="submit">Excel'i Aktar</button>
++                <button class="buton buton-ana" type="submit">Etkiyi Önizle</button>
+             </form>
+             <p class="yardim">
+                 Kaynak Excel ilk kurulumda kartları oluşturmak için kullanılabilir. Sonrasında günlük operasyonun source of truth'u
+-                <code>data/kartlar.xlsx</code> olur. Tekrar import yapılırsa mevcut workflow, tamamlanan adet ve operatör işlemleri korunur;
+-                yalnız plan/source alanları güncellenir.
++                <code>data/kartlar.xlsx</code> olur. Yeniden importta kaynak alanları ve geçerli DURUM Excel'den güncellenir.
++                PLANA ALINDI / HAZIR tamamlanan adedi sıfırlar; TESLİM EDİLDİ toplam adede eşitler.
++                DİZGİDE veya boş/geçersiz DURUM kısmi adedi korur. Notlar korunur.
++                Dosyada bulunmayan satırlar ve kaldırılan sayfaların kartları pasifleşir.
+             </p>
+         </article>
+ 
+@@ -86,7 +89,7 @@
+                     {% if k.dizgi_kod == 'ELLE' %}<span class="durum-rozet elle">Elle Dizgi</span>{% endif %}
+                     {% if k.dizgi_kod == 'EUM' %}<span class="durum-rozet eum">EÜM'de Dizgi</span>{% endif %}
+                     <button class="buton buton-kucuk buton-ana" type="button" data-admin-duzenle
+-                            data-id="{{ k.id }}" data-talep="{{ k.talep_no or '' }}" data-stok="{{ k.stok_no or '' }}"
++                            data-id="{{ k.id }}" data-surum="{{ k.surum }}" data-talep="{{ k.talep_no or '' }}" data-stok="{{ k.stok_no or '' }}"
+                             data-durum="" data-toplam="{{ k.toplam_adet }}" data-tamamlanan="{{ k.tamamlanan_adet }}"
+                             data-plan-hafta="{{ k.plan_hafta or '' }}" data-plan-baslama="{{ k.plan_baslama or '' }}"
+                             data-plan-teslim="{{ k.plan_teslim or '' }}" data-gerceklesen-teslim="{{ k.gerceklesen_teslim or '' }}"
+@@ -324,7 +327,7 @@
+                             ~ ' ' ~ (k.excel_durum or '')
+                             ~ ' ' ~ (k.dizgi_sorumlusu or '')
+                             ~ ' ' ~ (k.dizgi_etiket or '')
+-                        )|lower }}">
++                        ) }}">
+ 
+                         <td>{{ k.id }}</td>
+ 
+@@ -389,6 +392,7 @@
+                                 <button class="buton buton-kucuk buton-hayalet"
+                                         type="button"
+                                         data-admin-duzenle
++                                        data-surum="{{ k.surum }}"
+                                         data-id="{{ k.id }}"
+                                         data-talep="{{ k.talep_no or '' }}"
+                                         data-stok="{{ k.stok_no or '' }}"
+@@ -493,7 +497,7 @@
+         <div class="alan">
+             <label for="admin-tamamlanan">Tamamlanan adet</label>
+             <input type="number" id="admin-tamamlanan" min="0" required>
+-            <small>HAZIR ve TESLİM EDİLDİ seçildiğinde sistem otomatik olarak toplam adede eşitler.</small>
++            <small>PLANA ALINDI ve HAZIR tamamlanan adedi sıfırlar; TESLİM EDİLDİ toplam adede eşitler.</small>
+         </div>
+ 
+         <div class="alan">
+@@ -509,10 +513,10 @@
+         <div class="alan">
+             <label for="admin-gerceklesen-teslim">Gerçekleşen Teslim Tarihi</label>
+             <input type="date" id="admin-gerceklesen-teslim">
+-            <small>TESLİM EDİLDİ durumunda boş bırakılırsa bugünün tarihi kullanılır.</small>
+-        </div>
+-
+-        <div class="alan"><label for="admin-not">Not</label><textarea id="admin-not" rows="4"></textarea></div>
++            <small>Yeni bir TESLİM EDİLDİ geçişinde boş tarih bugün olur. Zaten teslim edilmiş kartta tarih uydurulmaz.</small>
++        </div>
++
++        <div class="alan"><label for="admin-not">Not</label><textarea id="admin-not" rows="4"></textarea><small>Burada mevcut not geçmişini düzenlersiniz. Toplam sınır 32.767 karakterdir; sınırı aşan işlem kaydedilmez.</small></div>
+ 
+         <div class="alan">
+             <label for="admin-dizgi-tipi">Dizgi Tipi</label>
+@@ -621,15 +625,13 @@
+     }
+ 
+     function adminKartlariFiltrele() {
+-        const arama = adminAra.value
+-            .trim()
+-            .toLocaleLowerCase("tr-TR");
++        const arama = aramaMetni(adminAra.value);
+ 
+         let gorunen = 0;
+ 
+         adminSatirlar.forEach((satir) => {
+             const durumUygun = adminDurumUygun(satir);
+-            const aramaUygun = !arama || satir.dataset.arama.includes(arama);
++            const aramaUygun = !arama || aramaMetni(satir.dataset.arama).includes(arama);
+             const uygun = durumUygun && aramaUygun;
+ 
+             satir.hidden = !uygun;
+@@ -681,6 +683,7 @@
+     }
+ 
+     function duzenlemeDialogunuAc(buton) {
++        adminForm.dataset.surum = buton.dataset.surum;
+         document.getElementById("admin-id").value = buton.dataset.id;
+         document.getElementById("admin-durum").value = buton.dataset.durum || "";
+         document.getElementById("admin-toplam").value = buton.dataset.toplam;
+@@ -755,6 +758,7 @@
+                 method: "POST",
+                 body: JSON.stringify({
+                     kart_id: Number(document.getElementById("admin-id").value),
++                    surum: adminForm.dataset.surum,
+                     durum: document.getElementById("admin-durum").value,
+                     toplam_adet: Number(document.getElementById("admin-toplam").value),
+                     tamamlanan_adet: Number(document.getElementById("admin-tamamlanan").value),
+--- before/static/stil.css
++++ after/static/stil.css
+@@ -103,7 +103,6 @@
+     align-items: center;
+     gap: 12px;
+     width: fit-content;
+-    transform: translateX(-35px);
+     text-decoration: none;
+ }
+ 
+@@ -186,8 +185,25 @@
+ 
+ .sayfa-shell {
+     display: grid;
++    grid-template-columns: minmax(0, 1fr);
+     gap: 20px;
+ }
++
++.sayfa-shell > *, .yonetim-grid > * {
++    min-width: 0;
++}
++
++.marka-yazi {
++    color: #176b55;
++    font-size: 20px;
++    letter-spacing: .04em;
++}
++
++.giris-logo .marka-yazi { font-size: 32px; }
++.ust-cubuk .marka-yazi { color: #cceae1; }
++
++.sayfalama { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
++.sayfalama[hidden] { display: none; }
+ 
+ .sayfa-baslik {
+     display: flex;
+@@ -1942,7 +1958,6 @@
+     width: min(900px, 78vw);
+     height: min(900px, 78vw);
+     transform: translate(-50%, -50%) rotate(-6deg);
+-    background: url("/static/pdgm_logo.png") center / contain no-repeat;
+     opacity: .025;
+     filter: grayscale(100%);
+     pointer-events: none;
+@@ -2203,6 +2218,8 @@
+         height: 40px;
+     }
+ 
++    .marka-isaret .marka-yazi { font-size: 14px; }
++
+     .panel-kutu,
+     .operator-arac-cubugu,
+     .panel-arac-cubugu {
+--- before/tests/test_audit_fixes.py
++++ after/tests/test_audit_fixes.py
+@@ -0,0 +1,140 @@
++"""Regression checks for the September system audit; temporary storage only."""
++import copy
++import unittest
++from pathlib import Path
++from unittest.mock import patch
++import excel_araclari as ex
++from flask import template_rendered
++import depo
++from tests import test_excel_sync as fixtures, test_ui as ui
++from tests.test_excel_sync import row
++
++
++class AuditFixTests(unittest.TestCase):
++    setUp = fixtures.SyncTests.setUp
++    book = fixtures.SyncTests.book
++    upload = fixtures.SyncTests.upload
++    load_app = ui.UITests.load_app
++
++    def prepare(self):
++        self.mod, self.client = self.load_app()
++        self.upload({'MAKİNE':[row(1,qty=10)]})
++        return depo.kartlari_getir()[0]
++
++    def post(self,path,data):
++        return self.client.post(path,json=data,headers={'X-CSRF-Token':'test-token'})
++
++    def test_stale_edit_cannot_replace_new_note_or_quantity(self):
++        k=self.prepare()
++        self.post('/api/basla',{'kart_id':k['id'],'adet':10})
++        self.post('/api/bitir',{'kart_id':k['id'],'adet':3})
++        old=depo.kartlari_getir()[0]
++        self.post('/api/bitir',{'kart_id':k['id'],'adet':2,'not':'Yeni operatör notu'})
++        response=self.post('/api/admin/duzenle',{'kart_id':k['id'],'surum':old.get('surum'),
++            'durum':'DİZGİDE','toplam_adet':10,'tamamlanan_adet':3,'not':'Eski not'})
++        self.assertEqual(response.status_code,409)
++        after=depo.kartlari_getir()[0]
++        self.assertEqual(after['tamamlanan_adet'],5)
++        self.assertIn('Yeni operatör notu',after['aciklama'])
++
++    def test_fresh_edit_accepted_and_missing_version_rejected(self):
++        k=self.prepare()
++        payload={'kart_id':k['id'],'durum':'PLANA ALINDI','not':'Yeni açıklama'}
++        self.assertEqual(self.post('/api/admin/duzenle',payload).status_code,409)
++        payload['surum']=k.get('surum')
++        self.assertEqual(self.post('/api/admin/duzenle',payload).status_code,200)
++        self.assertEqual(depo.kartlari_getir()[0]['aciklama'],'Yeni açıklama')
++
++    def test_long_note_rejected_without_memory_or_disk_changes(self):
++        k=self.prepare()
++        self.post('/api/not',{'kart_id':k['id'],'not':'Korunacak not'})
++        before=copy.deepcopy(depo._kartlar)
++        disk=Path(depo.KARTLAR_DOSYA).read_bytes()
++        response=self.post('/api/not',{'kart_id':k['id'],'not':'A'*33000})
++        self.assertEqual(response.status_code,400)
++        self.assertEqual(depo._kartlar,before)
++        self.assertEqual(Path(depo.KARTLAR_DOSYA).read_bytes(),disk)
++
++    def test_fractional_boolean_and_nonfinite_quantities_rejected(self):
++        k=self.prepare()
++        for value in [1.9,True,False,'1.9','NaN','Infinity']:
++            with self.subTest(value=value):
++                self.assertGreaterEqual(self.post('/api/basla',{'kart_id':k['id'],'adet':value}).status_code,400)
++        self.assertEqual(depo.kartlari_getir()[0]['durum'],'PLANA ALINDI')
++
++    def test_expired_api_session_returns_json_401_without_redirect(self):
++        self.prepare()
++        c=self.mod.app.test_client()
++        for method,url in [('get','/api/veriler'),('post','/api/not')]:
++            r=getattr(c,method)(url,json={})
++            self.assertEqual(r.status_code,401)
++            self.assertTrue(r.is_json)
++            self.assertIsNone(r.location)
++
++    def test_all_time_delivery_summary_includes_undated(self):
++        self.mod,self.client=self.load_app()
++        self.upload({'MAKİNE':[row(1,status='TESLİM EDİLDİ',actual=None),row(2,status='TESLİM EDİLDİ',actual='2026-09-18')]})
++        r=self.client.get('/api/panel/teslimler').json
++        self.assertEqual(r['ozet']['kart'],2)
++        self.assertEqual(len(r['teslim_edilen']),2)
++
++    def test_plan_filter_dataset_does_not_lose_cards_after_twelfth(self):
++        self.mod,self.client=self.load_app()
++        self.upload({'MAKİNE':[row(n) for n in range(1,15)],'ELDE DİZGİ':[row(1)]})
++        contexts=[]
++        def capture(sender,template,context,**kwargs): contexts.append(context)
++        with template_rendered.connected_to(capture,self.mod.app): self.client.get('/panel')
++        self.assertEqual(len(contexts[-1]['plana_alindi']),15)
++        self.assertEqual(sum(k['dizgi_kod']=='ELLE' for k in contexts[-1]['plana_alindi']),1)
++
++    def test_import_preview_does_not_write_and_stale_approval_is_rejected(self):
++        k=self.prepare()
++        self.post('/api/basla',{'kart_id':k['id'],'adet':10})
++        self.post('/api/bitir',{'kart_id':k['id'],'adet':3})
++        path=self.book({'MAKİNE':[row(1,qty=10)]})
++        def snapshot(source):
++            import shutil
++            target=self.root/'preview.xlsx';shutil.copy2(source,target);return str(target)
++        before=copy.deepcopy(depo._kartlar);disk=Path(depo.KARTLAR_DOSYA).read_bytes()
++        with patch.object(ex,'excel_deger_snapshot_olustur',snapshot):
++            with path.open('rb') as f:
++                r=self.client.post('/yonetim/yukle',data={'_csrf_token':'test-token','onizleme':'1','dosya':(f,'plan.xlsx')})
++            self.assertEqual(r.status_code,200)
++            self.assertIn('3 → 0',r.get_data(as_text=True))
++            self.assertEqual(depo._kartlar,before)
++            self.assertEqual(Path(depo.KARTLAR_DOSYA).read_bytes(),disk)
++            self.post('/api/not',{'kart_id':k['id'],'not':'Önizlemeden sonraki not'})
++            r=self.client.post('/yonetim/yukle-onay',data={'_csrf_token':'test-token'})
++            self.assertEqual(r.status_code,409)
++            self.assertEqual(depo.kart_getir(k['id'])['tamamlanan_adet'],3)
++            with path.open('rb') as f:
++                r=self.client.post('/yonetim/yukle',data={'_csrf_token':'test-token','onizleme':'1','dosya':(f,'plan.xlsx')})
++            self.assertEqual(r.status_code,200)
++            self.assertEqual(self.client.post('/yonetim/yukle-onay',data={'_csrf_token':'test-token'}).status_code,302)
++            self.assertEqual(depo.kart_getir(k['id'])['tamamlanan_adet'],0)
++            self.assertIn('Önizlemeden sonraki not',depo.kart_getir(k['id'])['aciklama'])
++            self.assertEqual(self.client.post('/yonetim/yukle-onay',data={'_csrf_token':'test-token'}).status_code,409)
++
++    def test_changed_calculated_snapshot_requires_new_preview(self):
++        self.prepare()
++        path=self.book({'MAKİNE':[row(1,qty=10)]})
++        calls=0
++        def snapshot(source):
++            nonlocal calls
++            import shutil, openpyxl
++            calls+=1
++            target=self.root/'calculated.xlsx';shutil.copy2(source,target)
++            if calls==2:
++                # Models a volatile Excel formula changing on the second COM open.
++                wb=openpyxl.load_workbook(target);wb['MAKİNE']['F2']='2026-10-10';wb.save(target);wb.close()
++            return str(target)
++        before=copy.deepcopy(depo._kartlar)
++        with patch.object(ex,'excel_deger_snapshot_olustur',snapshot):
++            with path.open('rb') as f:
++                self.client.post('/yonetim/yukle',data={'_csrf_token':'test-token','onizleme':'1','dosya':(f,'plan.xlsx')})
++            r=self.client.post('/yonetim/yukle-onay',data={'_csrf_token':'test-token'})
++        self.assertEqual(r.status_code,409)
++        self.assertEqual(depo._kartlar,before)
++
++
++if __name__=='__main__': unittest.main()
+--- before/tests/test_excel_com.py
++++ after/tests/test_excel_com.py
+@@ -13,6 +13,19 @@
+ class ExcelCOMTests(unittest.TestCase):
+     setUp=fixtures.SyncTests.setUp
+     book=fixtures.SyncTests.book
++
++    def test_text_identifiers_keep_leading_zeros_and_long_digits(self):
++        path=self.book({'MAKİNE':[fixtures.row('001'),fixtures.row('1'),
++            fixtures.row('12345678901234567890'),fixtures.row('N001')]})
++        wb=openpyxl.load_workbook(path)
++        wb['MAKİNE'].column_dimensions['A'].hidden=True
++        for cell in list(wb['MAKİNE']['A'])[1:]: cell.number_format='@'
++        wb.save(path);wb.close()
++        ex.excelden_aktar(str(path),'tester')
++        before={k['source_row_id']:k['id'] for k in depo._kartlar}
++        self.assertEqual(set(before),{'NO:001','NO:1','NO:12345678901234567890','NO:N001'})
++        ex.excelden_aktar(str(path),'tester')
++        self.assertEqual(before,{k['source_row_id']:k['id'] for k in depo._kartlar})
+ 
+     def test_real_snapshot_hidden_identity_1904_and_reupload(self):
+         path=self.book({'MAKİNE':[fixtures.row(1)],'EÜM':[
+--- before/tests/frontend_contract.cjs
++++ after/tests/frontend_contract.cjs
+@@ -0,0 +1,26 @@
++const fs = require('node:fs');
++const vm = require('node:vm');
++const assert = require('node:assert/strict');
++const html=fs.readFileSync('templates/base.html','utf8');
++const code=html.slice(html.indexOf('function csrfToken()'),html.indexOf('\nfunction toast('));
++const context={Headers,FormData,document:{querySelector:()=>null}};
++vm.createContext(context);vm.runInContext(code,context);
++(async()=>{
++  for(const response of [
++    {ok:true,status:200,redirected:true,type:'text/html',body:'<html>Login</html>'},
++    {ok:true,status:200,redirected:false,type:'text/html',body:'unexpected'},
++    {ok:false,status:401,redirected:false,type:'application/json',body:{hata:'Oturum sona erdi'}}
++  ]) {
++    context.fetch=async()=>({...response,headers:new Headers({'content-type':response.type}),
++      json:async()=>response.body,text:async()=>response.body});
++    await assert.rejects(()=>context.pdgmFetch('/api/not',{method:'POST',body:'{}'}));
++  }
++  context.fetch=async()=>({ok:true,status:200,redirected:false,
++    headers:new Headers({'content-type':'application/json'}),json:async()=>({tamam:true})});
++  assert.equal((await context.pdgmFetch('/api/not')).tamam,true);
++  assert.equal(typeof context.aramaMetni,'function');
++  for(const [source,query] of [['TEST VERİSİ','test verisi'],['IŞIK','ışık'],['C\u0327IG\u0306','çığ']]) {
++    assert(context.aramaMetni(source).includes(context.aramaMetni(query)),source);
++  }
++  console.log('Frontend contract: HTML/401 rejection, valid JSON, Turkish/Unicode search PASS');
++})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -1,0 +1,3054 @@
+--- before/depo.py
++++ after/depo.py
+@@ -2211,8 +2211,19 @@
+             _kartlar, _loglar, _yuklemeler = asil
+ 
+ 
++def _import_plani(plan):
++    """Boş kaynak metnini diskten okunan kartlarla aynı biçimde (None) tutar.
++
++    _oku boş hücreyi None döndürür; bellekte "" kalırsa sunucu yeniden
++    başladıktan sonra aynı dosyanın her yüklenmesi "" -> None hayali alan
++    değişikliği, gereksiz audit logu ve önizleme satırı üretir.
++    """
++    return {alan: (None if isinstance(deger, str) and not deger.strip() else deger)
++            for alan, deger in plan.items()}
++
++
+ def excel_import_uygula(dosya_adi, kullanici, satirlar, uyari_sayisi=0,
+-                       sadece_onizleme=False, beklenen_surum=None):
++                       sadece_onizleme=False, beklenen_surum=None, kaynak_ozeti=""):
+     """Tamamen parse/validate edilmiş kaynak satırlarını tek transaction-benzeri blokta uygular."""
+     global _kartlar, _loglar, _yuklemeler
+ 
+@@ -2230,6 +2241,7 @@
+             gorulen = set()
+             yeni = 0
+             guncellenen = 0
++            degismeyen = 0
+             workflow_korundu = 0
+             durum_iyilesen = 0
+             elle_dizgi_satir = sum(
+@@ -2243,14 +2255,35 @@
+                 if satir.get("plan", {}).get("dizgi_tipi") == DIZGI_TIPI_EUM
+             )
+             pasife_listesi = []
++            ayrilanlar = {}
+             sonraki_id = max([_sayi(kart.get("id"), 0) for kart in _kartlar] or [0]) + 1
+ 
+             for satir in satirlar:
+                 anahtar = satir["anahtar"]
+                 gorulen.add(anahtar)
+-                plan = satir["plan"]
++                plan = _import_plani(satir["plan"])
+                 mevcut = mevcut_harita.get(anahtar)
+ 
++                if (mevcut and mevcut.get("source_key") == anahtar
++                        and _temiz_metin(mevcut.get("talep_no")) != satir["talep_no"]):
++                    # Aynı sayfa+NO artık başka bir talebi taşıyor. Eski talebin notu,
++                    # operatörü ve iş akışı yeni talebe geçmesin: eski kart kendi
++                    # geçmişiyle ayrı bir kimliğe alınıp pasifleşir, yeni talep için
++                    # aşağıda temiz kart açılır.
++                    eski_kimlik = mevcut["source_row_id"]
++                    ayrik_kimlik = f"{eski_kimlik}~{mevcut['id']}"
++                    ayrik_anahtar = kaynak_anahtari(mevcut["source_sheet"], ayrik_kimlik)
++                    ayrilanlar[mevcut["id"]] = {"talep_no": satir["talep_no"], "stok_no": satir["stok_no"]}
++                    _loglar.append(_log_kaydi(
++                        kullanici, "admin", "EXCEL NO BAŞKA TALEBE VERİLDİ", mevcut["talep_no"], mevcut["stok_no"],
++                        detay=(f"ID={mevcut['id']} kaynak={anahtar}: {mevcut['talep_no']}/{mevcut['stok_no']} -> "
++                               f"{satir['talep_no']}/{satir['stok_no']}; eski kart pasifleşti, yeni kart açıldı"),
++                    ))
++                    mevcut.update(source_row_id=ayrik_kimlik, source_key=ayrik_anahtar,
++                                  anahtar=ayrik_anahtar, source_active=0, guncelleme=simdi())
++                    del mevcut_harita[anahtar]
++                    mevcut = None
++
+                 if mevcut:
+                     onceki = copy.deepcopy(mevcut)
+                     yeni_toplam = int(plan["toplam_adet"])
+@@ -2298,14 +2331,19 @@
+                         # Excel import zamanı gerçek üretim/teslim zamanı değildir.
+                         mevcut["operator"] = mevcut.get("operator") or "Excel"
+                     _kart_dogrula(mevcut)
+-                    guncellenen += 1
+                     degisiklik = {a: [onceki.get(a), mevcut.get(a)] for a in mevcut
+                                  if a != "guncelleme" and onceki.get(a) != mevcut.get(a)}
+                     if degisiklik:
++                        guncellenen += 1
+                         _loglar.append(_log_kaydi(
+                             kullanici, "admin", "EXCEL KART GÜNCELLENDİ", mevcut["talep_no"], mevcut["stok_no"],
+                             detay=f"ID={mevcut['id']} kaynak={anahtar} " + json.dumps(degisiklik, ensure_ascii=False),
+                         ))
++                    else:
++                        # Aynı dosyanın tekrar yüklenmesi kart sürümünü değiştirmemeli;
++                        # aksi halde açık admin formları gereksiz yere 409 alır.
++                        mevcut["guncelleme"] = onceki.get("guncelleme")
++                        degismeyen += 1
+                     continue
+ 
+                 toplam = int(plan["toplam_adet"])
+@@ -2337,6 +2375,7 @@
+                     "source_active": 1,
+                     "admin_gizli": 0,
+                     "kaynak": "EXCEL",
++                    "legacy_anahtar": None,
+                 }
+                 kayit.update(plan)
+                 _kart_dogrula(kayit)
+@@ -2372,14 +2411,38 @@
+                 degisiklikler = []
+                 for kart in _kartlar:
+                     onceki = oncekiler.get(kart["id"], {})
+-                    farklar = [{"alan": baslik, "eski": onceki.get(alan), "yeni": kart.get(alan)}
++                    farklar = [{"alan": baslik, "anahtar": alan, "eski": onceki.get(alan), "yeni": kart.get(alan)}
+                                for baslik, alan in alanlar if onceki.get(alan) != kart.get(alan)]
+                     if farklar:
+-                        degisiklikler.append({"id": kart["id"], "talep_no": kart.get("talep_no"),
+-                            "stok_no": kart.get("stok_no"), "yeni": not onceki, "farklar": farklar})
++                        # Önizleme ekranı kartları ne olacağına göre gruplar.
++                        if not onceki:
++                            tur = "yeni"
++                        elif kart["id"] in ayrilanlar:
++                            tur = "ayrildi"
++                        elif onceki.get("source_active", 1) == 1 and kart.get("source_active") == 0:
++                            tur = "pasif"
++                        elif onceki.get("source_active", 1) == 0 and kart.get("source_active") == 1:
++                            tur = "geri"
++                        else:
++                            tur = "guncelleme"
++                        degisiklikler.append({
++                            "id": kart["id"], "talep_no": kart.get("talep_no"),
++                            "stok_no": kart.get("stok_no"), "yeni": not onceki, "farklar": farklar,
++                            "tur": tur, "sayfa": dizgi_kodu(kart.get("dizgi_tipi")),
++                            "dizgi_etiket": dizgi_etiketi(kart.get("dizgi_tipi")),
++                            **{alan: kart.get(alan) for alan in (
++                                "sira", "talep_sahibi", "toplam_adet", "durum", "excel_durum",
++                                "plan_baslama", "plan_teslim", "gerceklesen_teslim")},
++                            "yerine": ayrilanlar.get(kart["id"]),
++                        })
++                mevcut_aktif = sum(1 for k in eski_kartlar
++                                   if k.get("kaynak") == "EXCEL" and k.get("source_active", 1) == 1)
+                 return {"surum": onceki_surum, "satir": len(satirlar), "yeni": yeni,
+-                        "pasife_alinan": pasife_alinan, "degisiklikler": degisiklikler,
+-                        "uyari": uyari_sayisi}
++                        "guncellenen": guncellenen, "degismeyen": degismeyen,
++                        "ayrilan": len(ayrilanlar),
++                        "pasife_alinan": pasife_alinan, "pasife_listesi": pasife_listesi,
++                        "mevcut_aktif": mevcut_aktif,
++                        "degisiklikler": degisiklikler, "uyari": uyari_sayisi}
+ 
+             _yuklemeler.append(
+                 {
+@@ -2400,9 +2463,11 @@
+                     "EXCEL YÜKLENDİ",
+                     detay=(
+                         f"{len(satirlar)} satır · {yeni} yeni · {guncellenen} güncellendi · "
++                        f"{degismeyen} değişmedi · "
+                         f"{workflow_korundu} workflow korundu · {durum_iyilesen} durum Excel'den değişti · "
+-                        f"{pasife_alinan} kaynakta yok · "
++                        f"{pasife_alinan} kaynakta yok · {len(ayrilanlar)} NO başka talebe verildi · "
+                         f"{uyari_sayisi} uyarı · yedek={os.path.basename(yedek_klasoru)}"
++                        + (f" · {kaynak_ozeti}" if kaynak_ozeti else "")
+                     ),
+                 )
+             )
+@@ -2420,6 +2485,8 @@
+                 "satir": len(satirlar),
+                 "yeni": yeni,
+                 "guncellenen": guncellenen,
++                "degismeyen": degismeyen,
++                "ayrilan": len(ayrilanlar),
+                 "pasife_alinan": pasife_alinan,
+                 "pasife_listesi": pasife_listesi[:20],
+                 "workflow_korundu": workflow_korundu,
+--- before/app.py
++++ after/app.py
+@@ -16,6 +16,7 @@
+ import logging
+ import logging.handlers
+ import os
++import re
+ import secrets
+ from collections import OrderedDict,deque
+ from datetime import date, datetime, timedelta
+@@ -422,6 +423,41 @@
+     return f"{parcalar[2]}.{parcalar[1]}.{parcalar[0]}" if len(parcalar) == 3 else str(deger)
+ 
+ 
++@app.template_filter("onizleme_deger")
++def onizleme_deger_filtresi(deger, alan=None):
++    """Import önizlemesindeki eski/yeni değerleri kullanıcı diliyle gösterir."""
++    if alan in ("plan_baslama", "plan_teslim", "gerceklesen_teslim"):
++        return gun_filtresi(deger)
++    if alan == "malzeme_bekliyor":
++        return "Evet" if deger == 1 else "Hayır"
++    if alan == "source_active":
++        return "Excel'de var" if deger == 1 else "Excel'de yok"
++    if alan == "durum" and not deger:
++        return "Durum yok"
++    return "—" if deger in (None, "") else str(deger)
++
++
++_SORUN_DESENI = re.compile(
++    r"^'(?P<sayfa>[^']+)'(?: sayfası)?,?\s*(?:Excel )?(?:satır (?P<satir>\d+)(?P<gizli> \(gizli\))?)?\s*:\s*(?P<mesaj>.+)$",
++    re.S,
++)
++
++
++def _sorunlari_ayir(sorunlar):
++    """"'MAKİNE' satır 272: ..." -> {"konum": "MAKİNE · satır 272", "mesaj": "..."}"""
++    sonuc = []
++    for sorun in sorunlar:
++        eslesme = _SORUN_DESENI.match(str(sorun))
++        if not eslesme:
++            sonuc.append({"konum": "", "mesaj": str(sorun)})
++            continue
++        konum = eslesme["sayfa"]
++        if eslesme["satir"]:
++            konum += f" · satır {eslesme['satir']}" + (" (gizli)" if eslesme["gizli"] else "")
++        sonuc.append({"konum": konum, "mesaj": eslesme["mesaj"].strip()})
++    return sonuc
++
++
+ @app.errorhandler(PermissionError)
+ def _excel_kilitli(_hata):
+     mesaj = (
+@@ -1058,6 +1094,51 @@
+         pass
+ 
+ 
++def _kisalt(metin, sinir=1500):
++    """Flash mesajları session çerezinde taşınır; çerez 4 KB sınırını aşmamalı."""
++    metin = str(metin)
++    return metin if len(metin) <= sinir else metin[: sinir - 1] + "…"
++
++
++def _import_mesaji(sonuc):
++    mesaj = (
++        f"Excel aktarıldı · {sonuc['satir']} satır · {sonuc['yeni']} yeni · "
++        f"{sonuc['guncellenen']} güncellendi · {sonuc.get('degismeyen', 0)} değişmedi · "
++        f"{sonuc.get('workflow_korundu', 0)} workflow korundu."
++    )
++    if sonuc.get("pasife_alinan"):
++        mesaj += f" · {sonuc['pasife_alinan']} kart kaynak Excel'de artık yok."
++    if sonuc.get("ayrilan"):
++        mesaj += (f" · {sonuc['ayrilan']} kartın NO'su Excel'de başka talebe verilmiş: eski kart geçmişiyle "
++                  "ayrıldı, yeni talep için kart açıldı.")
++    if sonuc.get("elle_dizgi_satir"):
++        mesaj += f" · {sonuc['elle_dizgi_satir']} kart ELDE DİZGİ sayfasından."
++    if sonuc.get("eum_dizgi_satir"):
++        mesaj += f" · {sonuc['eum_dizgi_satir']} kart EÜM sayfasından."
++    if sonuc.get("durum_iyilesen"):
++        mesaj += (
++            f" · {sonuc['durum_iyilesen']} kartın durumu Excel'den güncellendi."
++        )
++    if sonuc.get("uyari"):
++        mesaj += (
++            f" · {sonuc['uyari']} veri uyarısı var (boş/geçersiz DURUM, eksik teslim tarihi vb.); "
++            "bu kartlar Yönetim ekranında kontrol edilebilir."
++        )
++    rapor = sonuc.get("kaynak_raporu") or {}
++    if rapor.get("atlanan_satir"):
++        yerler = "; ".join(
++            f"{s['sayfa']} satır {s['atlanan_araliklar']}"
++            for s in rapor.get("sayfalar", []) if s.get("atlanan")
++        )
++        mesaj += (
++            f" · {rapor['atlanan_satir']} satır Talep NO/Kart Stok No içermediği için kart sayılmadı "
++            f"({_kisalt(yerler, 400)})."
++        )
++    if sonuc.get("yedek"):
++        mesaj += f" · Yedek: {os.path.basename(sonuc['yedek'])}"
++    return mesaj
++
++
+ @app.route("/yonetim/yukle", methods=["POST"])
+ @yetki("admin")
+ @csrf_koru
+@@ -1087,34 +1168,18 @@
+                 "surum": sonuc["surum"], "kaynak_surum": sonuc["kaynak_surum"]}
+             return render_template("import_onizleme.html", sonuc=sonuc, dosya=guvenli_ad)
+         sonuc = ex.excelden_aktar(yol, session["kullanici"])
+-        mesaj = (
+-            f"Excel aktarıldı · {sonuc['satir']} satır · {sonuc['yeni']} yeni · "
+-            f"{sonuc['guncellenen']} güncellendi · {sonuc['workflow_korundu']} workflow korundu."
+-        )
+-        if sonuc.get("pasife_alinan"):
+-            mesaj += f" · {sonuc['pasife_alinan']} kart kaynak Excel'de artık yok."
+-        if sonuc.get("elle_dizgi_satir"):
+-            mesaj += f" · {sonuc['elle_dizgi_satir']} kart ELDE DİZGİ sayfasından."
+-        if sonuc.get("eum_dizgi_satir"):
+-            mesaj += f" · {sonuc['eum_dizgi_satir']} kart EÜM sayfasından."
+-        if sonuc.get("durum_iyilesen"):
+-            mesaj += (
+-                f" · {sonuc['durum_iyilesen']} kartın durumu Excel'den güncellendi."
+-            )
+-        if sonuc.get("uyari"):
+-            mesaj += (
+-                f" · {sonuc['uyari']} veri uyarısı var (boş/geçersiz DURUM, eksik teslim tarihi vb.); "
+-                "bu kartlar Yönetim ekranında kontrol edilebilir."
+-            )
+-        if sonuc.get("yedek"):
+-            mesaj += f" · Yedek: {os.path.basename(sonuc['yedek'])}"
+-
++        mesaj = _import_mesaji(sonuc)
+         flash(mesaj, "basari")
+         app.logger.info("Excel import OK: %s", mesaj)
+         _yuklenen_exceleri_buda()
+     except (ex.ExcelAktarimHatasi, depo.IsKuralHatasi, depo.VeriDogrulamaHatasi) as hata:
+-        flash(f"Excel içeriği kabul edilmedi: {hata}", "hata")
+         app.logger.warning("Excel import reddedildi: %s", hata)
++        if request.form.get("onizleme") == "1":
++            # Sorunlar kesilmiş tek bir bildirim yerine madde madde gösterilir.
++            sorunlar = getattr(hata, "sorunlar", None) or [str(hata)]
++            return render_template("import_onizleme.html", hata=str(hata), hata_turu="excel",
++                                   sorunlar=_sorunlari_ayir(sorunlar), dosya=guvenli_ad), 422
++        flash(_kisalt(f"Excel içeriği kabul edilmedi: {hata}"), "hata")
+     except Exception:  # noqa: BLE001
+         app.logger.exception("Excel import sırasında beklenmeyen hata")
+         flash("Excel okunurken beklenmeyen bir hata oluştu. Uygulama logunu kontrol edin.", "hata")
+@@ -1137,11 +1202,14 @@
+         sonuc = ex.excelden_aktar(yol, session["kullanici"], beklenen_surum=bekleyen["surum"],
+                                  beklenen_kaynak_surum=bekleyen["kaynak_surum"])
+     except (depo.DepoHatasi, ex.ExcelAktarimHatasi, OSError) as hata:
+-        return render_template("import_onizleme.html", hata=str(hata)), 409
+-    flash(f"Excel aktarıldı · {sonuc['yeni']} yeni · {sonuc['guncellenen']} güncellendi · "
+-          f"{sonuc['pasife_alinan']} pasifleştirildi · {sonuc['uyari']} uyarı. "
+-          "Durumu eksik kartları Yönetim ekranından kontrol edin.", "basari")
+-    app.logger.info("Önizleme onaylandı; Excel import OK: %s", sonuc)
++        sorunlar = getattr(hata, "sorunlar", None) or [str(hata)]
++        return render_template("import_onizleme.html", hata=str(hata), hata_turu="onay",
++                               sorunlar=_sorunlari_ayir(sorunlar),
++                               # Kayıt adı "tarih_saat_kimlik_asıl-ad.xlsx" biçiminde.
++                               dosya=os.path.basename((bekleyen or {}).get("dosya") or "").split("_", 3)[-1]), 409
++    mesaj = _import_mesaji(sonuc)
++    flash(mesaj, "basari")
++    app.logger.info("Önizleme onaylandı; Excel import OK: %s", mesaj)
+     _yuklenen_exceleri_buda()
+     return redirect(url_for("yonetim"))
+ 
+@@ -1271,10 +1339,13 @@
+ 
+ 
+ def ozet_hesapla():
++    # Kaynak Excel'den kaldırılmış kartlar pano/teslim API'sinde olduğu gibi
++    # sayaçlara girmez; rapordaki kart listesi onları "Kaynakta Aktif=0" ile tutar.
+     kartlar = [
+         kart
+         for kart in depo.kartlari_getir(sadece_gorunen=False)
+         if not kart.get("admin_gizli") and kart.get("aktif", 1) == 1
++        and not kart.get("kaynakta_yok")
+     ]
+     bugun_tarih = date.today()
+ 
+--- before/excel_araclari.py
++++ after/excel_araclari.py
+@@ -5,10 +5,16 @@
+   (opsiyonel) kullanılır. Sayfalar TEK import işleminde birlikte işlenir:
+   aksi halde bir sayfayı import etmek diğer sayfadan gelen kartları
+   "kaynakta yok" (pasif) yapardı.
+-- Hidden kolonlar alınmaz; hidden satırlar korunur.
++- Gizli satır ve sütunlar da okunur. Sütunlar başlık adıyla eşlenir; gizlilik
++  yalnız aynı başlık birden fazla sütunda geçtiğinde görünür olanı seçmek için
++  kullanılır (ör. gizli sipariş bloğundaki ikinci "Planlanan Teslim T.").
+ - Microsoft Excel COM ile values-only snapshot oluşturulur.
+ - External link güncellemesi ve full recalculation yapılmaz.
+-- Talep NO + Kart Stok No olmayan satırlar kart sayılmaz.
++- Talep NO + Kart Stok No olmayan satırlar kart sayılmaz. Tamamen boş satırlar
++  sessizce atlanır; yalnız şablon/kalıntı hücreleri (NO, Stok, sorumlu, hafta
++  metni...) içeren satırlar atlanır ve önizlemede satır numarasıyla raporlanır.
++  Adet, DURUM veya plan/teslim tarihi içeren ama Talep NO / Kart Stok No'su
++  eksik satır gerçek kayıt sayılır ve tüm import reddedilir.
+ - Her satır kaynak sayfası + kalıcı NO (veya PDGM_ROW_ID) ile tanınır.
+   Tarihler, adetler ve fiziksel satır sırası kimliğe katılmaz.
+ - Workflow yalnız şu dört durumdan oluşur:
+@@ -32,12 +38,13 @@
+ import re
+ import tempfile
+ import threading
++import unicodedata
+ from datetime import date, datetime, timedelta
+ from pathlib import Path
+ 
+ import openpyxl
+ from openpyxl.styles import Alignment, Font, PatternFill
+-from openpyxl.utils import get_column_letter
++from openpyxl.utils import column_index_from_string, get_column_letter
+ from openpyxl.utils.datetime import from_excel, CALENDAR_WINDOWS_1900
+ 
+ try:
+@@ -53,7 +60,8 @@
+ 
+ 
+ class ExcelAktarimHatasi(Exception):
+-    pass
++    # Satır bazlı sorunların tek tek listesi (önizleme ekranı madde madde gösterir).
++    sorunlar = ()
+ 
+ 
+ KAYNAK_SAYFA_ADI = "MAKİNE"
+@@ -92,7 +100,10 @@
+ 
+ 
+ def _sadelestir(deger):
+-    metin = str(deger or "").translate(TURKCE_HARFLER).upper()
++    metin = str(deger or "").translate(TURKCE_HARFLER)
++    # Ayrışık yazılmış "I + birleşik nokta" gibi biçimler de aynı metne insin.
++    metin = "".join(c for c in unicodedata.normalize("NFKD", metin) if not unicodedata.combining(c))
++    metin = metin.upper()
+     metin = metin.replace(".", " ").replace("_", " ").replace("\xa0", " ")
+     return re.sub(r"\s+", " ", metin).strip()
+ 
+@@ -136,18 +147,83 @@
+     # bu yüzden bu indirgeme bilgi kaybı yaratmaz.
+     "DIZGI ICIN BEKLIYOR": depo.PLANA_ALINDI,
+     "DIZGIDE VE MALZEME BEKLIYOR": depo.DIZGIDE,
+-    # EÜM sayfası durumları
++    # Gerçek ELDE DİZGİ sayfası aynı durumu "BEKLENİYOR" yazımıyla kullanıyor.
++    "DIZGIDE VE MALZEME BEKLENIYOR": depo.DIZGIDE,
++    # EÜM sayfası durumları. Planlanmış üretim hiçbir zaman DİZGİDE/TESLİM
++    # sayılmaz: iki planlama yazımı da PLANA ALINDI'ya iner.
+     "URETIM DEVAM EDIYOR": depo.DIZGIDE,
+     "URETIM PLANA ALINDI": depo.PLANA_ALINDI,
+     "EMTD PLANLANDI": depo.PLANA_ALINDI,
+ }
+ 
+-# Bu iki ham durum, kart bir workflow durumuna girmiş olsa bile fiilen
++# Bu ham durumlar, kart bir workflow durumuna girmiş olsa bile fiilen
+ # malzeme eksikliğinden ilerleyemediğini ifade eder. Operatör ekranı bu
+ # bayrağa bakarak "Dizgiye Al" aksiyonunu gizler / uyarı gösterir.
+ MALZEME_BEKLEYEN_DURUMLAR = {
+     "MALZEME TEDARIK",
+     "DIZGIDE VE MALZEME BEKLIYOR",
++    "DIZGIDE VE MALZEME BEKLENIYOR",
++}
++
++# Bilerek iş akışı durumuna eşlenmeyen kaynak durumları: kart durumsuz kalır
++# (mevcut kartta iş akışı korunur). Bunların dışındaki tanınmayan her DURUM
++# importu durdurur; aksi halde kart eski durumunda kalıp yanlış görünür
++# (ör. Excel "TESLİM EDİLDİ (KISMİ)" derken monitörde "PLANDA").
++DURUMSUZ_DURUMLAR = {"MALZEME TEDARIK", "PDGM ONERI"}
++KABUL_EDILEN_DURUMLAR_METNI = (
++    "PLANA ALINDI, DİZGİDE, HAZIR, TESLİM EDİLDİ, DİZGİ İÇİN BEKLİYOR, DİZGİDE VE MALZEME "
++    "BEKLİYOR/BEKLENİYOR, ÜRETİM PLANA ALINDI, ÜRETİM DEVAM EDİYOR, EMTD PLANLANDI; durumsuz: "
++    "MALZEME TEDARİK, PDGM ÖNERİ"
++)
++
++# pywin32 Range.Value2, hücre hatalarını (#N/A vb.) HRESULT tamsayısı olarak
++# döndürür. Snapshot'a sayı olarak yazılırsa ör. Talep NO "-2146826246" olur.
++EXCEL_HATA_KODLARI = {
++    -2146826288: "#NULL!",
++    -2146826281: "#DIV/0!",
++    -2146826273: "#VALUE!",
++    -2146826265: "#REF!",
++    -2146826259: "#NAME?",
++    -2146826252: "#NUM!",
++    -2146826246: "#N/A",
++    -2146826245: "#GETTING_DATA",
++    -2146826243: "#SPILL!",
++    -2146826238: "#CALC!",
++}
++EXCEL_HATA_METINLERI = set(EXCEL_HATA_KODLARI.values()) | {
++    "#HATA!", "#FIELD!", "#BLOCKED!", "#CONNECT!", "#UNKNOWN!", "#BUSY!", "#PYTHON!",
++}
++XL_CELL_TYPE_VISIBLE = 12
++
++# Talep NO / Kart Stok No eksik bir satırda bu alanlardan biri doluysa satır
++# yarım kalmış gerçek bir kayıttır; sessizce atlanırsa kart "silinmiş" sayılırdı.
++# NO, Stok, sorumlu, talep sahibi, PCB ve hafta metni tek başına kanıt değildir:
++# gerçek dosyada gizli kalıntı/şablon satırları tam olarak bunları içeriyor.
++KAYIT_KANITI_ALANLARI = (
++    "talep_no",
++    "adet_metin",
++    "excel_durum",
++    "plan_baslama",
++    "plan_teslim",
++    "gerceklesen_teslim",
++    "eum_planlanan_tarih",
++    "source_row_id",
++)
++ALAN_ADLARI = {
++    "sira": "NO",
++    "source_row_id": "PDGM_ROW_ID",
++    "talep_no": "Talep NO",
++    "talep_sahibi": "Talep Sahibi",
++    "stok_no": "Kart Stok No",
++    "adet_metin": "Kart Üretim Adet",
++    "plan_hafta": "Planlanan Başlangıç T.",
++    "eum_planlanan_tarih": "T.planlanan tarih",
++    "plan_baslama": "Dizgi Başlama Tarihi",
++    "plan_teslim": "Planlanan Teslim T.",
++    "gerceklesen_teslim": "Gerçekleşen Teslim T.",
++    "excel_durum": "DURUM",
++    "pcb": "PCB",
++    "dizgi_sorumlusu": "PDGM Dizgi Sorumlusu",
+ }
+ 
+ 
+@@ -155,47 +231,104 @@
+ # COM snapshot
+ # ---------------------------------------------------------------------------
+ 
++def _com_hata_kodu_mu(deger):
++    # 0x800A07D0 (#NULL!) ve sonrası: Excel CVErr aralığı; gerçek veri bu değerleri almaz.
++    return (isinstance(deger, int) and not isinstance(deger, bool)
++            and -2146826288 <= deger <= -2146826200)
++
++
++def _com_hucre(deger):
++    if _com_hata_kodu_mu(deger):
++        return "'" + EXCEL_HATA_KODLARI.get(deger, "#HATA!")
++    # Value2 ile yazılan metni Excel yeniden yorumlar: "001234" -> 1234,
++    # "1-2" -> tarih, "=abc" -> formül. Baştaki ' öneki metni aynen saklar.
++    if isinstance(deger, str) and deger:
++        return "'" + deger
++    return deger
++
++
++def _com_degerleri(deger):
++    """Value2 sonucunu tuple-of-tuples yapar; metni ve hücre hatalarını metin olarak korur."""
++    if not isinstance(deger, tuple):
++        deger = ((deger,),)
++    return tuple(tuple(_com_hucre(h) for h in satir) for satir in deger)
++
++
++def _gizli_satir_bloklari(kaynak_ws, ilk_satir, son_satir):
++    """Gizli satırları [(ilk, son), ...] blokları olarak döndürür (yalnız raporlama için)."""
++    blok = kaynak_ws.Range(kaynak_ws.Cells(ilk_satir, 1), kaynak_ws.Cells(son_satir, 1)).EntireRow
++    gorunur = set()
++    try:
++        alan = blok.SpecialCells(XL_CELL_TYPE_VISIBLE)
++    except Exception:  # noqa: BLE001
++        # Bilgi alınamadıysa "hepsi gizli" demek yanıltıcı olur; gizlilik raporlanmaz.
++        return []
++    for i in range(1, alan.Areas.Count + 1):
++        parca = alan.Areas(i)
++        gorunur.update(range(parca.Row, parca.Row + parca.Rows.Count))
++    bloklar = []
++    for satir in range(ilk_satir, son_satir + 1):
++        if satir in gorunur:
++            continue
++        if bloklar and bloklar[-1][1] == satir - 1:
++            bloklar[-1][1] = satir
++        else:
++            bloklar.append([satir, satir])
++    return bloklar
++
++
+ def _sayfa_kopyala(kaynak_ws, hedef_ws):
+-    """Bir kaynak sheet'in hidden olmayan kolonlarını, hidden satırları koruyarak hedefe kopyalar."""
++    """Kaynak sayfanın kullanılan alanını değer olarak aynı satır/sütun konumlarına kopyalar.
++
++    Gizli satır ve sütunlar da kopyalanır ve hedefte yine gizli işaretlenir.
++    Böylece parser sütunları gerçek başlıklarla eşler: gizlenen DURUM veya
++    teslim sütunu verinin boş sanılmasına yol açmaz; gizlilik yalnız aynı
++    başlığın birden fazla sütunda geçtiği durumda görünür olanı seçmek için
++    kullanılır.
++    """
+     used = kaynak_ws.UsedRange
+     ilk_satir = used.Row
+     son_satir = used.Row + used.Rows.Count - 1
+     ilk_sutun = used.Column
+     son_sutun = used.Column + used.Columns.Count - 1
+-    hedef_sutun = 1
++    gizli_sutunlar = []
+ 
+-    for kaynak_sutun in range(ilk_sutun, son_sutun + 1):
++    for sutun in range(ilk_sutun, son_sutun + 1):
+         kimlik_sutunu = any(
+-            _sadelestir(kaynak_ws.Cells(r, kaynak_sutun).Value2) in {"NO", "PDGM ROW ID"}
++            _sadelestir(kaynak_ws.Cells(r, sutun).Value2) in {"NO", "PDGM ROW ID"}
+             for r in range(ilk_satir, min(son_satir, 10) + 1)
+         )
+-        if bool(kaynak_ws.Columns(kaynak_sutun).Hidden):
+-            # Kalıcı kimlik gizli olsa da snapshot'tan düşürülmez.
+-            if not kimlik_sutunu:
+-                continue
+-
+         kaynak_aralik = kaynak_ws.Range(
+-            kaynak_ws.Cells(ilk_satir, kaynak_sutun),
+-            kaynak_ws.Cells(son_satir, kaynak_sutun),
++            kaynak_ws.Cells(ilk_satir, sutun),
++            kaynak_ws.Cells(son_satir, sutun),
+         )
+         hedef_aralik = hedef_ws.Range(
+-            hedef_ws.Cells(ilk_satir, hedef_sutun),
+-            hedef_ws.Cells(son_satir, hedef_sutun),
++            hedef_ws.Cells(ilk_satir, sutun),
++            hedef_ws.Cells(son_satir, sutun),
+         )
+         # General biçimi metinsel '001' ve uzun sayısal kimlikleri dönüştürür.
+         # Değerleri yazmadan önce yalnız kimlik sütununun hedefini metin yap.
+         if kimlik_sutunu:
+             hedef_aralik.NumberFormat = "@"
+-        hedef_aralik.Value2 = kaynak_aralik.Value2
+-        hedef_sutun += 1
++        hedef_aralik.Value2 = _com_degerleri(kaynak_aralik.Value2)
++        if bool(kaynak_ws.Columns(sutun).Hidden):
++            gizli_sutunlar.append(sutun)
++
++    for sutun in gizli_sutunlar:
++        hedef_ws.Columns(sutun).Hidden = True
++    try:
++        for bas, son in _gizli_satir_bloklari(kaynak_ws, ilk_satir, son_satir):
++            hedef_ws.Rows(f"{bas}:{son}").Hidden = True
++    except Exception:  # noqa: BLE001 - satır gizliliği yalnız rapor bilgisidir
++        pass
+ 
+ 
+ def excel_deger_snapshot_olustur(dosya_yolu):
+-    """MAKİNE (zorunlu) ve ELDE DİZGİ YENİ (varsa) sheet'lerinin visible
++    """MAKİNE (zorunlu), ELDE DİZGİ ve EÜM (varsa) sayfalarını values-only geçici xlsx'e kopyalar.
+ 
+-    kolonlarını values-only geçici xlsx'e kopyalar. Her iki sayfa da tek
+-    snapshot dosyasında, kaynak adlarıyla aynı isimde ayrı sheet olarak yer
+-    alır; böylece _excelden_aktar tek workbook üzerinden ikisini de okuyup
++    Her sayfa tek snapshot dosyasında, kaynak adlarıyla aynı isimde ayrı sheet
++    olarak ve aynı hücre konumlarında yer alır; gizli satır/sütun bilgisi
++    korunur. Böylece _excelden_aktar tek workbook üzerinden hepsini okuyup
+     tek import işleminde birleştirebilir.
+     """
+     if pythoncom is None or win32com is None:
+@@ -411,12 +544,102 @@
+     return None, None
+ 
+ 
++def _bos_mu(deger):
++    """Boş hücre: None, "" veya yalnız boşluk (formülün "" sonucu dahil)."""
++    return deger is None or (isinstance(deger, str) and not deger.strip())
++
++
++def _excel_hatasi_mi(deger):
++    return isinstance(deger, str) and deger.strip().upper() in EXCEL_HATA_METINLERI
++
++
+ def _hucre_al(satir, kolonlar, alan):
+     index = kolonlar.get(alan)
+     if index is None or index >= len(satir):
+         return None
+     deger = satir[index]
+-    return None if deger == "" else deger
++    return None if _bos_mu(deger) else deger
++
++
++def _gizli_sutunlar(ws):
++    """1 tabanlı gizli sütun numaraları. openpyxl bitişik sütunları tek boyutta (min..max) tutar."""
++    gizli = set()
++    for boyut in (getattr(ws, "column_dimensions", None) or {}).values():
++        if not boyut.hidden:
++            continue
++        bas = boyut.min or column_index_from_string(boyut.index)
++        gizli.update(range(bas, (boyut.max or bas) + 1))
++    return gizli
++
++
++def _satir_gizli_mi(ws, satir_no):
++    boyutlar = getattr(ws, "row_dimensions", None)
++    boyut = boyutlar.get(satir_no) if boyutlar is not None else None
++    return bool(boyut is not None and boyut.hidden)
++
++
++def satir_araliklari(satirlar):
++    """[211, 212, 213, 229] -> '211–213, 229'"""
++    parcalar = []
++    for satir in sorted(satirlar):
++        if parcalar and parcalar[-1][1] == satir - 1:
++            parcalar[-1][1] = satir
++        else:
++            parcalar.append([satir, satir])
++    return ", ".join(str(a) if a == b else f"{a}–{b}" for a, b in parcalar)
++
++
++# Üretim planı/teslim sütunları DURUM'un yanındaki üretim bloğundadır; aynı başlıklar
++# soldaki sipariş bloğunda (gizli) tekrar eder. Tekrarda doğru sütunu gizlilik değil
++# DURUM'a yakınlık belirler: sütunu gizlemek/göstermek okunan tarihi değiştirmemeli.
++URETIM_BLOGU_ALANLARI = {"plan_hafta", "eum_planlanan_tarih", "plan_baslama", "plan_teslim", "gerceklesen_teslim"}
++
++
++def _kolonlari_esle(ws, sayfa_adi, basliklar):
++    """Başlık adına göre alan -> 0 tabanlı sütun indeksi.
++
++    Aynı alan birden fazla sütunda geçiyorsa:
++    - üretim bloğu alanlarında (plan/teslim tarihleri) DURUM sütununa en yakın
++      sütun seçilir; gerçek dosyada gizli sipariş bloğunda ikinci bir
++      "Planlanan Teslim T." var ve hangisinin gizli olduğu sonucu değiştirmez;
++    - diğer alanlarda (ör. NO) yalnız biri görünürse o seçilir.
++    Karar verilemezse tahmin yerine hata verilir.
++    "__kimlik_no__" yalnız başlığı tam olarak NO olan kimlik sütunudur.
++    """
++    gizli = _gizli_sutunlar(ws)
++    adaylar = {}
++    for index, baslik in enumerate(basliklar):
++        alan = BASLIK_ESLESME.get(baslik)
++        if alan:
++            adaylar.setdefault(alan, []).append(index)
++        if baslik == "NO":
++            adaylar.setdefault("__kimlik_no__", []).append(index)
++    durum_sutunlari = adaylar.get("excel_durum", [])
++    durum_sutunu = durum_sutunlari[0] if len(durum_sutunlari) == 1 else None
++
++    kolonlar = {}
++    for alan, indexler in adaylar.items():
++        if len(indexler) > 1:
++            secilen = None
++            if alan in URETIM_BLOGU_ALANLARI and durum_sutunu is not None:
++                uzaklik = sorted((abs(i - durum_sutunu), i) for i in indexler)
++                if uzaklik[0][0] != uzaklik[1][0]:
++                    secilen = uzaklik[0][1]
++            if secilen is None:
++                gorunur = [i for i in indexler if i + 1 not in gizli]
++                if len(gorunur) == 1:
++                    secilen = gorunur[0]
++            if secilen is None:
++                harfler = ", ".join(get_column_letter(i + 1) for i in indexler)
++                ad = "NO" if alan == "__kimlik_no__" else ALAN_ADLARI.get(alan, alan)
++                raise ExcelAktarimHatasi(
++                    f"'{sayfa_adi}' sayfası: '{ad}' için birden fazla sütun bulundu ({harfler}); hangisinin "
++                    "okunacağı belirsiz. Okunması gereken sütunu görünür, diğerlerini gizli bırakın "
++                    "veya başlığını değiştirin."
++                )
++            indexler = [secilen]
++        kolonlar[alan] = indexler[0]
++    return kolonlar
+ 
+ 
+ def _tarih_coz_ve_dogrula(deger, alan_adi, excel_satir_no, epoch=CALENDAR_WINDOWS_1900):
+@@ -465,137 +688,424 @@
+     return ("ID:" if acik_id not in (None, "") else "NO:") + metin
+ 
+ 
+-# ---------------------------------------------------------------------------
+-# Import
+-# ---------------------------------------------------------------------------
++# Tam tarih gibi görünen metinler (17.09.2026, 2026-09-21T00:30, 46147) katı
++# tarih olarak çözülür; "2.06" gibi yılsız gün.ay hafta metni sayılır.
++TARIH_BENZERI = re.compile(
++    r"^\s*(\d{4,6}(?:\.\d+)?|\d{1,4}\s*[./-]\s*\d{1,2}\s*[./-]\s*\d{1,4}(?:[T\s]\d{1,2}:\d{2}\S*)?)\s*$"
++)
++# Önünde rakam/nokta olmamalı: "2.06 haftası" -> 6. hafta, "2026 haftası" -> 26. hafta değil.
++HAFTA_NO_DESENI = re.compile(r"(?<![\d./])(\d{1,2})\s*\.?\s*HAFTA")
++GUN_AY_DESENI = re.compile(r"(\d{1,2})\s*[./]\s*(\d{1,2})(?:\s*[./]\s*(\d{2,4}))?")
++BOS_TARIH_METINLERI = {"-", "YOK", "N/A", "NONE"}
++
++
++def _pazartesi(gun):
++    return gun - timedelta(days=gun.weekday())
++
++
++def _hafta_metni_coz(metin, referans_iso=None):
++    """ "23. Hafta (2.06 haftası)" -> ('2025-06-02', uyarı veya None).
++
++    Gerçek EÜM sayfası planlanan başlangıcı yılsız hafta metni olarak tutar.
++    Yıl, satırın plan/teslim tarihine (yoksa bugüne) en yakın ve hafta numarası
++    ile gün.ay bilgisinin tutarlı olduğu yıldır; tarih haftanın Pazartesi'sidir.
++    """
++    referans = date.fromisoformat(referans_iso) if referans_iso else date.today()
++    temiz = str(metin).translate(TURKCE_HARFLER).upper()
++    eslesme = HAFTA_NO_DESENI.search(temiz)
++    hafta = int(eslesme.group(1)) if eslesme and 1 <= int(eslesme.group(1)) <= 53 else None
++    kalan = temiz[eslesme.end():] if eslesme else temiz
++
++    def en_yakin(adaylar):
++        return min(adaylar, key=lambda gun: (abs((gun - referans).days), gun))
++
++    gun_ay = GUN_AY_DESENI.search(kalan)
++    if gun_ay:
++        gun, ay, yil = int(gun_ay.group(1)), int(gun_ay.group(2)), gun_ay.group(3)
++        if yil:
++            yillar = [int(yil) + 2000 if int(yil) < 100 else int(yil)]
++        else:
++            yillar = [referans.year - 1, referans.year, referans.year + 1]
++        adaylar = []
++        for aday_yil in yillar:
++            try:
++                adaylar.append(date(aday_yil, ay, gun))
++            except ValueError:
++                pass
++        if adaylar:
++            uyumlu = [a for a in adaylar if hafta is None or a.isocalendar()[1] == hafta]
++            # "(2.06 haftası)" haftanın Pazartesi'sidir; yıl belirsizliğini bu çözer.
++            secim = en_yakin([a for a in uyumlu if a.weekday() == 0] or uyumlu
++                             or [a for a in adaylar if a.weekday() == 0] or adaylar)
++            uyari = None
++            if hafta is not None and not uyumlu:
++                uyari = f"hafta numarası ({hafta}) ile {secim:%d.%m.%Y} uyuşmuyor; gün.ay esas alındı"
++            return _pazartesi(secim).isoformat(), uyari
++
++    if hafta is not None:
++        adaylar = []
++        for aday_yil in (referans.year - 1, referans.year, referans.year + 1):
++            try:
++                adaylar.append(date.fromisocalendar(aday_yil, hafta, 1))
++            except ValueError:
++                pass
++        if adaylar:
++            uyari = None if referans_iso else "yıl bilgisi yok; bugüne en yakın yıl seçildi"
++            return en_yakin(adaylar).isoformat(), uyari
++    return None, None
++
+ 
+-def _sayfa_satirlarini_coz(ws, sayfa_adi, dizgi_tipi, anahtar_gruplari, parsed_liste):
+-    """Kaynak satırlarını doğrular; sayfa kapsamında kalıcı kimlik üretir."""
+-    baslik_no, basliklar = _baslik_satiri_bul(ws)
+-    if not baslik_no:
++def _planlanan_baslangic_coz(deger, alan_adi, satir_no, epoch, referans_iso, kati):
++    """EÜM plan başlangıcı: tarih ise o haftanın Pazartesi'si, hafta metni ise çözülmüş Pazartesi.
++
++    Döner (iso veya None, uyarı metni veya None). Tarih gibi görünüp geçersiz
++    değer her zaman hata verir; tanınmayan serbest metin katı (açık tarih)
++    sütununda hata, hafta metni sütununda uyarıdır.
++    """
++    if _bos_mu(deger) or (isinstance(deger, str) and deger.strip().upper() in BOS_TARIH_METINLERI):
++        return None, None
++    if not isinstance(deger, str) or TARIH_BENZERI.match(deger):
++        tarih = _tarih_coz_ve_dogrula(deger, alan_adi, satir_no, epoch)
++        return _pazartesi(date.fromisoformat(tarih)).isoformat(), None
++    sonuc, uyari = _hafta_metni_coz(deger, referans_iso)
++    if sonuc:
++        return sonuc, (f"{alan_adi} '{deger.strip()}': {uyari}." if uyari else None)
++    if kati:
+         raise ExcelAktarimHatasi(
+-            f"'{sayfa_adi}' sayfasında başlık satırı bulunamadı. "
+-            "Dosyada 'Talep NO' veya 'Kart Stok No' sütunu olmalı."
++            f"Excel satır {satir_no}: {alan_adi} okunamadı. Gelen değer: {deger!r}"
+         )
++    return None, (f"{alan_adi} '{deger.strip()}' tarih veya 'NN. hafta' olarak okunamadı; "
++                  "plan başlangıcı boş bırakıldı.")
+ 
+-    kolonlar = {}
+-    for index, baslik in enumerate(basliklar):
+-        alan = BASLIK_ESLESME.get(baslik)
+-        if not alan:
++
++def _hata_ozeti(hatalar, sinir=10):
++    if len(hatalar) == 1:
++        return hatalar[0]
++    ozet = f"{len(hatalar)} sorun bulundu, hiçbir kayıt değiştirilmedi: " + " | ".join(hatalar[:sinir])
++    if len(hatalar) > sinir:
++        ozet += f" | … ve {len(hatalar) - sinir} sorun daha"
++    return ozet
++
++
++def _sorun_hatasi(hatalar):
++    hata = ExcelAktarimHatasi(_hata_ozeti(hatalar))
++    hata.sorunlar = tuple(hatalar)
++    return hata
++
++
++# Önizlemede uyarılar türüne göre gruplanır; açıklama kartlara ne olacağını söyler.
++UYARI_TURLERI = {
++    "durum_bos": (
++        "DURUM boş",
++        "Yeni kart durumsuz oluşturulur ve Pano, Operatör ve Monitör ekranlarında görünmez; "
++        "Yönetim ekranındaki \"Durumu eksik kartlar\" bölümünden durum atanabilir. Kart zaten "
++        "sistemdeyse mevcut iş akışı ve adetleri korunur.",
++    ),
++    "durum_durumsuz": (
++        "DURUM \"{deger}\": iş akışı durumu atanmaz",
++        "Bu aşama (malzeme tedariği, PDGM önerisi) bilerek PLANA ALINDI / DİZGİDE / TESLİM EDİLDİ'ye "
++        "eşlenmez; sonuç DURUM boş ile aynıdır. Excel'deki metin kartta kaynak durumu olarak saklanır.",
++    ),
++    "teslim_tarihsiz": (
++        "TESLİM EDİLDİ ama Gerçekleşen Teslim T. boş",
++        "Kart teslim edilmiş sayılır. Teslim tarihi bilinmediği için zamanında/geç teslim "
++        "hesabına girmez; sistem tarih uydurmaz.",
++    ),
++    "teslim_tarihi_durum_disi": (
++        "Gerçekleşen Teslim T. dolu ama DURUM teslim değil",
++        "DURUM esas alınır: kart teslim edilmiş sayılmaz. Tarih kartta bilgi olarak saklanır.",
++    ),
++    "no_sayisal_degil": (
++        "NO sayısal değil",
++        "Kart kimliği NO metniyle tutulmaya devam eder; yalnız sıralama alanı boş kalır.",
++    ),
++    "plan_baslangic": (
++        "Planlanan başlangıç tam çözülemedi",
++        "EÜM hafta metni tarih veya \"NN. hafta\" olarak okunamadı ya da hafta numarasıyla tarih "
++        "uyuşmadı. Satır ayrıntısında kullanılan değer yazıyor.",
++    ),
++}
++
++
++def _uyari_gruplari(sayfalar):
++    """Uyarıları (tür, değer) bazında toplar: kaç satır, hangi sayfa/satırlar."""
++    gruplar = {}
++    for sayfa in sayfalar:
++        for kayit in sayfa.get("uyari_kayitlari", []):
++            anahtar = (kayit["tur"], kayit.get("deger"))
++            grup = gruplar.setdefault(anahtar, {"satirlar": {}, "mesajlar": []})
++            grup["satirlar"].setdefault(sayfa["sayfa"], []).append(kayit["satir"])
++            grup["mesajlar"].append(kayit["mesaj"])
++    sonuc = []
++    for (tur, deger), grup in gruplar.items():
++        baslik, aciklama = UYARI_TURLERI.get(tur, (tur, ""))
++        sonuc.append({
++            "tur": tur,
++            "baslik": baslik.format(deger=deger or ""),
++            "aciklama": aciklama,
++            "adet": len(grup["mesajlar"]),
++            "yerler": [{"sayfa": ad, "satirlar": satir_araliklari(s)} for ad, s in grup["satirlar"].items()],
++            "mesajlar": grup["mesajlar"],
++        })
++    return sonuc
++
++
++def _hucre_etiketi(dolu):
++    """'I:Kart Stok No' -> 'Kart Stok No (I)'; başlıksız sütun -> 'V sütunu'."""
++    harf, _, baslik = dolu.partition(":")
++    return f"{baslik} ({harf})" if baslik else f"{harf} sütunu"
++
++
++def kaynak_raporu_ozeti(rapor):
++    """Log ve bildirim için tek satırlık sayfa özeti."""
++    parcalar = []
++    for sayfa in (rapor or {}).get("sayfalar", []):
++        if sayfa.get("bulunamadi"):
++            parcalar.append(f"{sayfa['sayfa']}: sayfa yok")
+             continue
+-        if alan in kolonlar:
+-            raise ExcelAktarimHatasi(
+-                f"'{sayfa_adi}' sayfası: '{baslik}' için birden fazla görünür Excel sütunu bulundu."
+-            )
+-        kolonlar[alan] = index
++        metin = f"{sayfa['sayfa']}: {sayfa['kayit']} kayıt"
++        if sayfa.get("atlanan"):
++            metin += (f", {len(sayfa['atlanan'])} satır Talep NO/Kart Stok No olmadığı için "
++                      f"kart sayılmadı ({sayfa['atlanan_araliklar']})")
++        parcalar.append(metin)
++    return "; ".join(parcalar)
+ 
+-    for gerekli in ("talep_no", "stok_no", "adet_metin"):
+-        if gerekli not in kolonlar:
+-            ad = {
+-                "talep_no": "Talep NO",
+-                "stok_no": "Kart Stok No",
+-                "adet_metin": "Kart Üretim Adet",
+-            }[gerekli]
+-            raise ExcelAktarimHatasi(f"'{sayfa_adi}' sayfası: Zorunlu '{ad}' sütunu bulunamadı.")
+ 
++# ---------------------------------------------------------------------------
++# Import
++# ---------------------------------------------------------------------------
++
++def _sayfa_satirlarini_coz(ws, sayfa_adi, dizgi_tipi, anahtar_gruplari, parsed_liste,
++                           rapor=None, hatalar=None):
++    """Kaynak satırlarını doğrular; sayfa kapsamında kalıcı kimlik üretir.
++
++    Satır sınıfları:
++    - Tamamen boş (formülün "" sonucu dahil): sayılır, sessizce atlanır.
++    - Talep NO + Kart Stok No dolu: kayıt; kimlik, adet ve tarihler doğrulanır.
++    - Talep NO / Kart Stok No eksik ama adet, DURUM, plan/teslim tarihi,
++      PDGM_ROW_ID veya Talep NO içeren satır: yarım gerçek kayıt -> hata.
++    - Diğerleri (yalnız NO, Stok, sorumlu, hafta metni gibi kalıntılar): kart
++      sayılmaz, satır numarasıyla rapora yazılır.
++    Satırın gizli olması sınıfı değiştirmez.
++
++    rapor verilirse sayfa özeti eklenir. hatalar listesi verilirse satır
++    hataları oraya toplanır; verilmezse sayfa sonunda tek ExcelAktarimHatasi
++    fırlatılır. Hatalı satır hiçbir durumda parsed_liste'ye eklenmez.
++    """
++    kendi_hatalari = hatalar is None
++    if kendi_hatalari:
++        hatalar = []
++    sayfa_raporu = {
++        "sayfa": sayfa_adi,
++        "kod": depo.dizgi_kodu(dizgi_tipi),
++        "bulunamadi": False,
++        "baslik_satiri": None,
++        "kayit": 0,
++        "gizli_kayit": 0,
++        "bos_satir": 0,
++        "atlanan": [],
++        "atlanan_araliklar": "",
++        "atlanan_gruplari": [],
++        "uyarilar": [],
++        "uyari_kayitlari": [],
++    }
++    if rapor is not None:
++        rapor.setdefault("sayfalar", []).append(sayfa_raporu)
+     uyari_sayisi = 0
+ 
++    def bitir():
++        atlanan = sayfa_raporu["atlanan"]
++        sayfa_raporu["atlanan_araliklar"] = satir_araliklari(a["satir"] for a in atlanan)
++        # Aynı hücreleri dolu kalıntı satırları tek satırda özetlenir.
++        gruplar = {}
++        for a in atlanan:
++            gruplar.setdefault(tuple(a["dolu"]), []).append(a)
++        sayfa_raporu["atlanan_gruplari"] = [
++            {"hucreler": [_hucre_etiketi(d) for d in dolu], "adet": len(satirlar),
++             "gizli": sum(1 for a in satirlar if a["gizli"]),
++             "satirlar": satir_araliklari(a["satir"] for a in satirlar)}
++            for dolu, satirlar in gruplar.items()
++        ]
++        if kendi_hatalari and hatalar:
++            raise _sorun_hatasi(hatalar)
++        return uyari_sayisi
++
++    try:
++        baslik_no, basliklar = _baslik_satiri_bul(ws)
++        if not baslik_no:
++            raise ExcelAktarimHatasi(
++                f"'{sayfa_adi}' sayfasında başlık satırı bulunamadı. "
++                "Dosyada 'Talep NO' veya 'Kart Stok No' sütunu olmalı."
++            )
++        kolonlar = _kolonlari_esle(ws, sayfa_adi, basliklar)
++        for gerekli in ("talep_no", "stok_no", "adet_metin"):
++            if gerekli not in kolonlar:
++                raise ExcelAktarimHatasi(
++                    f"'{sayfa_adi}' sayfası: Zorunlu '{ALAN_ADLARI[gerekli]}' sütunu bulunamadı."
++                )
++    except ExcelAktarimHatasi as exc:
++        hatalar.append(str(exc))
++        return bitir()
++
++    sayfa_raporu["baslik_satiri"] = baslik_no
++    ham_basliklar = next(ws.iter_rows(min_row=baslik_no, max_row=baslik_no, values_only=True))
++    epoch = ws.parent.epoch
++
++    def sutun_adi(index):
++        baslik = ham_basliklar[index] if index < len(ham_basliklar) else None
++        harf = get_column_letter(index + 1)
++        return f"{harf}:{str(baslik).strip()}" if not _bos_mu(baslik) else harf
++
+     for excel_satir_no, satir in enumerate(
+         ws.iter_rows(min_row=baslik_no + 1, values_only=True),
+         start=baslik_no + 1,
+     ):
+-        if not any(hucre not in (None, "") for hucre in satir):
++        dolu = [i for i, hucre in enumerate(satir) if not _bos_mu(hucre)]
++        if not dolu:
++            sayfa_raporu["bos_satir"] += 1
+             continue
++        gizli = _satir_gizli_mi(ws, excel_satir_no)
+ 
+-        talep_no = str(_hucre_al(satir, kolonlar, "talep_no") or "").strip()
+-        stok_no = str(_hucre_al(satir, kolonlar, "stok_no") or "").strip()
++        def deger(alan):
++            ham = _hucre_al(satir, kolonlar, alan)
++            return None if _excel_hatasi_mi(ham) else ham
++
++        talep_no = str(deger("talep_no") or "").strip()
++        stok_no = str(deger("stok_no") or "").strip()
+         if not talep_no or not stok_no:
+-            if (talep_no or stok_no or _hucre_al(satir, kolonlar, "sira") is not None
+-                    or _hucre_al(satir, kolonlar, "source_row_id") is not None):
+-                raise ExcelAktarimHatasi(
+-                    f"'{sayfa_adi}' satır {excel_satir_no}: Talep NO ve Kart Stok No gerekli; "
+-                    "eksik satır silinmiş kabul edilmedi."
++            kanit = [ALAN_ADLARI[a] for a in KAYIT_KANITI_ALANLARI if deger(a) is not None]
++            if kanit:
++                eksik = " ve ".join(ad for ad, v in (("Talep NO", talep_no), ("Kart Stok No", stok_no)) if not v)
++                hatalar.append(
++                    f"'{sayfa_adi}' satır {excel_satir_no}{' (gizli)' if gizli else ''}: {eksik} boş, "
++                    f"ancak satırda kayıt verisi var ({', '.join(kanit)}). Eksik alanı doldurun; "
++                    "kayıt kaldırıldıysa satırı tamamen temizleyin. Eksik satır silinmiş kabul edilmedi."
+                 )
++            else:
++                sayfa_raporu["atlanan"].append({
++                    "satir": excel_satir_no,
++                    "gizli": gizli,
++                    "dolu": [sutun_adi(i) for i in dolu],
++                })
+             continue
+ 
++        satir_uyarilari = []
++
++        def uyar(tur, mesaj, ek=None):
++            satir_uyarilari.append((tur, ek, f"'{sayfa_adi}' satır {excel_satir_no}: {mesaj}"))
++
+         try:
+-            toplam_adet = adet_coz(_hucre_al(satir, kolonlar, "adet_metin"))
+-        except ExcelAktarimHatasi as exc:
+-            raise ExcelAktarimHatasi(f"'{sayfa_adi}' sayfası, satır {excel_satir_no}: {exc}") from exc
++            hatali_hucreler = [
++                ALAN_ADLARI.get(alan, alan) for alan, index in kolonlar.items()
++                if not alan.startswith("__") and index < len(satir) and _excel_hatasi_mi(satir[index])
++            ]
++            if hatali_hucreler:
++                raise ExcelAktarimHatasi(
++                    f"'{sayfa_adi}' satır {excel_satir_no}: Excel hata değeri içeren hücre "
++                    f"({', '.join(hatali_hucreler)}). Formülü düzeltip dosyayı kaydedin."
++                )
+ 
+-        plan_baslama_ham = _hucre_al(satir, kolonlar, "plan_baslama")
+-        plan_teslim_ham = _hucre_al(satir, kolonlar, "plan_teslim")
+-        gerceklesen_ham = _hucre_al(satir, kolonlar, "gerceklesen_teslim")
++            try:
++                toplam_adet = adet_coz(_hucre_al(satir, kolonlar, "adet_metin"))
++            except ExcelAktarimHatasi as exc:
++                raise ExcelAktarimHatasi(f"'{sayfa_adi}' sayfası, satır {excel_satir_no}: {exc}") from exc
+ 
+-        plan_baslama = _tarih_coz_ve_dogrula(
+-            plan_baslama_ham, "Dizgi Başlama Tarihi", excel_satir_no, ws.parent.epoch
+-        )
+-        plan_teslim = _tarih_coz_ve_dogrula(
+-            plan_teslim_ham, "Planlanan Teslim Tarihi", excel_satir_no, ws.parent.epoch
+-        )
+-        gerceklesen = _tarih_coz_ve_dogrula(
+-            gerceklesen_ham, "Gerçekleşen Teslim Tarihi", excel_satir_no, ws.parent.epoch
+-        )
++            plan_baslama = _tarih_coz_ve_dogrula(
++                deger("plan_baslama"), "Dizgi Başlama Tarihi", excel_satir_no, epoch
++            )
++            plan_teslim = _tarih_coz_ve_dogrula(
++                deger("plan_teslim"), "Planlanan Teslim Tarihi", excel_satir_no, epoch
++            )
++            gerceklesen = _tarih_coz_ve_dogrula(
++                deger("gerceklesen_teslim"), "Gerçekleşen Teslim Tarihi", excel_satir_no, epoch
++            )
+ 
+-        if dizgi_tipi == depo.DIZGI_TIPI_EUM:
+-            planlanan = _hucre_al(satir, kolonlar, "eum_planlanan_tarih")
+-            if "eum_planlanan_tarih" not in kolonlar:
+-                planlanan = _hucre_al(satir, kolonlar, "plan_hafta")
+-            if planlanan not in (None, ""):
+-                tarih = _tarih_coz_ve_dogrula(
+-                    planlanan, "EÜM planlanan tarih", excel_satir_no, ws.parent.epoch
++            if dizgi_tipi == depo.DIZGI_TIPI_EUM and not plan_baslama:
++                # EÜM'de ayrı Dizgi Başlama sütunu yok: planlanan tarih/hafta
++                # metninin Pazartesi'si plan başlangıcıdır. Açık "T.planlanan
++                # tarih" sütunu varsa o esastır (boşsa başlangıç da boş).
++                referans = plan_teslim or gerceklesen
++                if "eum_planlanan_tarih" in kolonlar:
++                    plan_baslama, not_ = _planlanan_baslangic_coz(
++                        deger("eum_planlanan_tarih"), "EÜM planlanan tarih", excel_satir_no,
++                        epoch, referans, kati=True,
++                    )
++                else:
++                    plan_baslama, not_ = _planlanan_baslangic_coz(
++                        deger("plan_hafta"), "Planlanan Başlangıç T.", excel_satir_no,
++                        epoch, referans, kati=False,
++                    )
++                if not_:
++                    uyar("plan_baslangic", not_)
++
++            if plan_baslama and plan_teslim and plan_baslama > plan_teslim:
++                raise ExcelAktarimHatasi(
++                    f"'{sayfa_adi}' sayfası, satır {excel_satir_no}: Dizgi Başlama Tarihi ({plan_baslama}) "
++                    f"Planlanan Teslim Tarihinden ({plan_teslim}) sonra olamaz."
+                 )
+-                gun = date.fromisoformat(tarih)
+-                plan_baslama = (gun - timedelta(days=gun.weekday())).isoformat()
+-            elif "eum_planlanan_tarih" in kolonlar or "plan_hafta" in kolonlar:
+-                plan_baslama = None
+ 
+-        if plan_baslama and plan_teslim and plan_baslama > plan_teslim:
+-            raise ExcelAktarimHatasi(
+-                f"'{sayfa_adi}' sayfası, satır {excel_satir_no}: Dizgi Başlama Tarihi ({plan_baslama}) "
+-                f"Planlanan Teslim Tarihinden ({plan_teslim}) sonra olamaz."
++            no_index = kolonlar.get("__kimlik_no__")
++            no = satir[no_index] if no_index is not None and no_index < len(satir) else None
++            source_row_id = _kaynak_satir_kimligi(
++                None if _bos_mu(no) else no,
++                deger("source_row_id"), sayfa_adi, excel_satir_no,
+             )
++            source_sheet = depo.dizgi_kodu(dizgi_tipi)
++            anahtar = depo.kaynak_anahtari(source_sheet, source_row_id)
++            if anahtar in anahtar_gruplari:
++                raise ExcelAktarimHatasi(
++                    f"'{sayfa_adi}' satır {excel_satir_no}: Tekrarlanan kaynak kimliği {source_row_id} "
++                    f"(ilk kullanım satır {anahtar_gruplari[anahtar]})."
++                )
+ 
+-        no_index = basliklar.index("NO") if "NO" in basliklar else None
+-        no = satir[no_index] if no_index is not None and no_index < len(satir) else None
+-        source_row_id = _kaynak_satir_kimligi(
+-            no, _hucre_al(satir, kolonlar, "source_row_id"), sayfa_adi, excel_satir_no
+-        )
+-        source_sheet = depo.dizgi_kodu(dizgi_tipi)
+-        anahtar = depo.kaynak_anahtari(source_sheet, source_row_id)
+-        if anahtar in anahtar_gruplari:
+-            raise ExcelAktarimHatasi(
+-                f"'{sayfa_adi}' satır {excel_satir_no}: Tekrarlanan kaynak kimliği {source_row_id}."
+-            )
++            durum_ham = deger("excel_durum")
++            if (not _bos_mu(durum_ham) and durum_coz(durum_ham)[0] is None
++                    and _sadelestir(durum_ham) not in DURUMSUZ_DURUMLAR):
++                raise ExcelAktarimHatasi(
++                    f"'{sayfa_adi}' satır {excel_satir_no}: DURUM '{str(durum_ham).strip()}' tanınmıyor; "
++                    "kart yanlış durumda görünmesin diye aktarım durduruldu. Excel'deki yazımı "
++                    f"düzeltin. Kabul edilen değerler: {KABUL_EDILEN_DURUMLAR_METNI}."
++                )
++        except ExcelAktarimHatasi as exc:
++            mesaj = str(exc)
++            if not mesaj.startswith("'"):
++                mesaj = f"'{sayfa_adi}' {mesaj}"
++            hatalar.append(mesaj)
++            continue
+         anahtar_gruplari[anahtar] = excel_satir_no
+ 
+-        excel_durum_raw = _hucre_al(satir, kolonlar, "excel_durum")
++        excel_durum_raw = deger("excel_durum")
+         ilk_durum, durum_uyarisi = durum_coz(excel_durum_raw)
+         if durum_uyarisi:
+-            uyari_sayisi += 1
+-
+-        if (ilk_durum == depo.TESLIM_EDILDI and not gerceklesen):
+-            uyari_sayisi += 1
+-
+-        elif (ilk_durum != depo.TESLIM_EDILDI and gerceklesen):
+-            uyari_sayisi += 1
++            if _bos_mu(excel_durum_raw):
++                uyar("durum_bos", "DURUM boş; yeni kartın durumu boş kalır, mevcut kartın iş akışı korunur.")
++            else:
++                uyar("durum_durumsuz",
++                     f"DURUM '{str(excel_durum_raw).strip()}' bilerek bir iş akışı durumuna eşlenmez; "
++                     "yeni kartın durumu boş kalır, mevcut kartın iş akışı korunur.",
++                     ek=str(excel_durum_raw).strip())
++
++        if ilk_durum == depo.TESLIM_EDILDI and not gerceklesen:
++            uyar("teslim_tarihsiz", "TESLİM EDİLDİ ama Gerçekleşen Teslim T. boş; teslim tarihi bilinmiyor olarak kalır.")
++        elif ilk_durum != depo.TESLIM_EDILDI and gerceklesen:
++            uyar("teslim_tarihi_durum_disi", f"DURUM {ilk_durum or 'boş'} iken Gerçekleşen Teslim T. dolu; kart teslim edilmiş sayılmaz.")
+ 
+-        sira, sira_uyarisi = _sira_coz(_hucre_al(satir, kolonlar, "sira"))
++        sira, sira_uyarisi = _sira_coz(deger("sira"))
+         if sira_uyarisi:
+-            uyari_sayisi += 1
++            uyar("no_sayisal_degil", "NO sayısal değil; Sıra alanı boş bırakıldı.")
+ 
+         plan = {
+             "sira": sira,
+-            "talep_sahibi": str(_hucre_al(satir, kolonlar, "talep_sahibi") or "").strip(),
++            "talep_sahibi": str(deger("talep_sahibi") or "").strip(),
+             "toplam_adet": toplam_adet,
+-            "adet_metin": str(_hucre_al(satir, kolonlar, "adet_metin") or "").strip(),
+-            "plan_hafta": str(_hucre_al(satir, kolonlar, "plan_hafta") or "").strip(),
++            "adet_metin": str(deger("adet_metin") or "").strip(),
++            "plan_hafta": str(deger("plan_hafta") or "").strip(),
+             "plan_baslama": plan_baslama,
+             "plan_teslim": plan_teslim,
+             "excel_durum": str(excel_durum_raw or "").strip(),
+-            "pcb": str(_hucre_al(satir, kolonlar, "pcb") or "").strip(),
++            "pcb": str(deger("pcb") or "").strip(),
+             "dizgi_tipi": dizgi_tipi,
+-            "dizgi_sorumlusu": str(_hucre_al(satir, kolonlar, "dizgi_sorumlusu") or "").strip(),
++            "dizgi_sorumlusu": str(deger("dizgi_sorumlusu") or "").strip(),
+             "malzeme_bekliyor": 1 if malzeme_bekliyor_mu(excel_durum_raw) else 0,
+         }
+ 
+@@ -612,8 +1122,16 @@
+                 "ilk_durum": ilk_durum,
+             }
+         )
++        sayfa_raporu["kayit"] += 1
++        sayfa_raporu["gizli_kayit"] += int(gizli)
++        for tur, ek, mesaj in satir_uyarilari:
++            sayfa_raporu["uyarilar"].append(mesaj)
++            sayfa_raporu["uyari_kayitlari"].append(
++                {"tur": tur, "deger": ek, "satir": excel_satir_no, "mesaj": mesaj}
++            )
++        uyari_sayisi += len(satir_uyarilari)
+ 
+-    return uyari_sayisi
++    return bitir()
+ 
+ 
+ def excelden_aktar(dosya_yolu, kullanici, onizleme=False, beklenen_surum=None, beklenen_kaynak_surum=None):
+@@ -621,13 +1139,20 @@
+         return _excelden_aktar(dosya_yolu, kullanici, onizleme, beklenen_surum, beklenen_kaynak_surum)
+ 
+ 
++def _sayfa_bul(wb, sayfa_adi):
++    """COM snapshot sayfaları kanonik adla yazar; doğrudan okunan dosyada adlar serbesttir."""
++    hedef = _sadelestir(sayfa_adi)
++    return next((wb[ad] for ad in wb.sheetnames if _sadelestir(ad) == hedef), None)
++
++
+ def _excelden_aktar(dosya_yolu, kullanici, onizleme=False, beklenen_surum=None, beklenen_kaynak_surum=None):
+     snapshot_yolu = None
+     wb = None
+ 
+     try:
+         snapshot_yolu = excel_deger_snapshot_olustur(dosya_yolu)
+-        wb = openpyxl.load_workbook(snapshot_yolu, data_only=True, read_only=True)
++        # read_only değil: satır/sütun gizlilik bilgisi yalnız normal modda okunur.
++        wb = openpyxl.load_workbook(snapshot_yolu, data_only=True)
+     except ExcelAktarimHatasi:
+         raise
+     except Exception as exc:
+@@ -635,29 +1160,39 @@
+             f"Dosya geçerli bir Excel çalışma kitabı değil: {exc}"
+         ) from exc
+ 
++    # Önce bütün sayfalar okunup doğrulanır; tek satır hatası bile varsa
++    # depo'ya hiçbir şey gönderilmez (kısmi/eksik okunmuş Excel ile ezme yok).
++    rapor = {"sayfalar": []}
+     try:
+         parsed = []
+         anahtar_gruplari = {}
+         uyari_sayisi = 0
+-        sayfa_bulundu = False
++        hatalar = []
+ 
+         for sayfa_adi, dizgi_tipi, zorunlu in KAYNAK_SAYFALARI:
+-            if sayfa_adi not in wb.sheetnames:
++            ws = _sayfa_bul(wb, sayfa_adi)
++            if ws is None:
+                 if zorunlu:
+                     raise ExcelAktarimHatasi(
+                         f"'{sayfa_adi}' sayfası bulunamadı. "
+                         f"Dosyadaki sayfalar: {', '.join(wb.sheetnames)}"
+                     )
+-                continue  # opsiyonel sayfa (ör. ELDE DİZGİ YENİ) yoksa sessizce atla
++                # Opsiyonel sayfanın yokluğu tam snapshot sözleşmesinde o
++                # kaynağın kartlarını pasifleştirir; önizlemede görünür olsun.
++                rapor["sayfalar"].append({
++                    "sayfa": sayfa_adi, "kod": depo.dizgi_kodu(dizgi_tipi), "bulunamadi": True,
++                    "kayit": 0, "gizli_kayit": 0, "bos_satir": 0, "atlanan": [],
++                    "atlanan_araliklar": "", "atlanan_gruplari": [], "uyarilar": [],
++                    "uyari_kayitlari": [],
++                })
++                continue
+ 
+-            sayfa_bulundu = True
+-            ws = wb[sayfa_adi]
+             uyari_sayisi += _sayfa_satirlarini_coz(
+-                ws, sayfa_adi, dizgi_tipi, anahtar_gruplari, parsed
++                ws, sayfa_adi, dizgi_tipi, anahtar_gruplari, parsed, rapor=rapor, hatalar=hatalar
+             )
+ 
+-        if not sayfa_bulundu:
+-            raise ExcelAktarimHatasi("Excel'de işlenecek kart satırı bulunamadı.")
++        if hatalar:
++            raise _sorun_hatasi(hatalar)
+ 
+     finally:
+         if wb is not None:
+@@ -671,6 +1206,11 @@
+             except OSError:
+                 pass
+ 
++    rapor["uyarilar"] = [u for sayfa in rapor["sayfalar"] for u in sayfa["uyarilar"]]
++    rapor["uyari_gruplari"] = _uyari_gruplari(rapor["sayfalar"])
++    rapor["atlanan_satir"] = sum(len(sayfa["atlanan"]) for sayfa in rapor["sayfalar"])
++    rapor["kayit"] = len(parsed)
++
+     # Dosya baytları aynı kalsa bile Excel formülleri yeniden hesaplanabilir.
+     kaynak_surum = hashlib.sha256(json.dumps(parsed, sort_keys=True, ensure_ascii=False,
+                                             default=str).encode("utf-8")).hexdigest()
+@@ -683,8 +1223,10 @@
+         kullanici=kullanici,
+         satirlar=parsed,
+         uyari_sayisi=uyari_sayisi,
++        kaynak_ozeti=kaynak_raporu_ozeti(rapor),
+         **secenekler,
+     )
++    sonuc["kaynak_raporu"] = rapor
+     if onizleme:
+         sonuc["kaynak_surum"] = kaynak_surum
+     return sonuc
+--- before/templates/import_onizleme.html
++++ after/templates/import_onizleme.html
+@@ -1,31 +1,349 @@
+ {% extends "base.html" %}
+ {% block title %}Import Önizleme · PDGM İş Takip{% endblock %}
++
++{% macro tur_rozeti(kod) -%}
++    {%- if kod == "ELLE" -%}<span class="durum-rozet elle">Elle Dizgi</span>
++    {%- elif kod == "EUM" -%}<span class="durum-rozet eum">EÜM'de Dizgi</span>
++    {%- else -%}<span class="durum-rozet">Makine</span>{%- endif -%}
++{%- endmacro %}
++
++{% macro durum_rozeti(durum, excel_durum=None) -%}
++    {%- if durum == "TESLİM EDİLDİ" -%}<span class="durum-rozet iyi">{{ durum }}</span>
++    {%- elif durum == "DİZGİDE" -%}<span class="durum-rozet uyari">{{ durum }}</span>
++    {%- elif durum -%}<span class="durum-rozet">{{ durum }}</span>
++    {%- else -%}<span class="durum-rozet kotu">Durum yok</span>{%- endif -%}
++    {%- if excel_durum and excel_durum != durum -%}<small class="kaynak-metni">Excel: {{ excel_durum }}</small>{%- endif -%}
++{%- endmacro %}
++
+ {% block content %}
+-<section class="panel-kutu">
+-    <h1>Excel Aktarım Önizlemesi</h1>
+-    {% if hata %}
+-    <p class="bildirim hata" role="alert">{{ hata }}</p>
+-    {% else %}
+-    <p><strong>{{ dosya }}</strong> · {{ sonuc.satir }} satır · {{ sonuc.yeni }} yeni kart · {{ sonuc.pasife_alinan }} kart pasifleşecek · {{ sonuc.uyari }} veri uyarısı</p>
+-    <p>Henüz kayıt değiştirilmedi. Aşağıdaki durum, adet ve tarih değişikliklerini kontrol edin. Notlar korunur. Boş veya geçersiz kaynak durumları Yönetim ekranında kontrol gerektirebilir.</p>
+-    <div class="tablo-kapsayici">
+-        <table>
+-            <thead><tr><th>Kart</th><th>Alan</th><th>Değişiklik</th></tr></thead>
+-            <tbody>
+-            {% for k in sonuc.degisiklikler %}
+-                {% for f in k.farklar %}
+-                <tr><td>{{ k.talep_no }} · {{ k.stok_no }} · #{{ k.id }}{% if k.yeni %} (yeni){% endif %}</td>
+-                    <td>{{ f.alan }}</td><td>{{ f.eski if f.eski is not none else '—' }} → {{ f.yeni if f.yeni is not none else '—' }}</td></tr>
+-                {% endfor %}
+-            {% else %}<tr><td colspan="3">Kart alanlarında değişiklik yok.</td></tr>{% endfor %}
+-            </tbody>
+-        </table>
++<div class="sayfa-shell onizleme-sayfa">
++{% if hata %}
++    <section class="sayfa-baslik sayfa-hero">
++        <div>
++            <p class="ust-etiket">EXCEL AKTARIMI</p>
++            <h1>{{ "Excel kabul edilmedi" if hata_turu == "excel" else "Aktarım uygulanmadı" }}</h1>
++            <p class="soluk">{% if dosya %}<strong>{{ dosya }}</strong> · {% endif %}Hiçbir kart, not veya yedek değişmedi.</p>
++        </div>
++        <div class="baslik-aksiyon">
++            <a class="buton buton-hayalet" href="{{ url_for('yonetim') }}">Yönetime Dön</a>
++        </div>
++    </section>
++
++    <section class="panel-kutu" role="alert">
++        <div class="panel-baslik">
++            <div>
++                <p class="ust-etiket">{{ sorunlar|length }} SORUN</p>
++                {% if hata_turu == "excel" %}
++                <h2>Dosyada düzeltilmesi gerekenler</h2>
++                <p class="panel-aciklama">Bu satırları Excel'de düzeltip dosyayı kaydedin, ardından Yönetim ekranından yeniden yükleyin. Tek bir satır hatalıyken diğer satırlar da uygulanmaz; böylece yarım okunmuş bir dosya kartları ezemez.</p>
++                {% else %}
++                <h2>Neden uygulanmadı</h2>
++                <p class="panel-aciklama">Önizleme ile onay arasında dosya, Excel'in hesapladığı değerler veya sistemdeki kartlar değişti ya da bu önizleme zaten kullanıldı. Dosyayı yeniden seçip yeni bir önizleme oluşturun.</p>
++                {% endif %}
++            </div>
++        </div>
++        <ol class="sorun-listesi">
++            {% for s in sorunlar %}
++            <li>
++                {% if s.konum %}<span class="sorun-konum">{{ s.konum }}</span>{% endif %}
++                <span>{{ s.mesaj }}</span>
++            </li>
++            {% endfor %}
++        </ol>
++    </section>
++{% else %}
++    {% set r = sonuc.kaynak_raporu or {} %}
++    {% set d = sonuc.degisiklikler %}
++    {% set yeniler = d|selectattr("tur", "equalto", "yeni")|list %}
++    {% set guncellenecek = d|selectattr("tur", "equalto", "guncelleme")|list %}
++    {% set pasifler = d|selectattr("tur", "equalto", "pasif")|list %}
++    {% set geri_gelenler = d|selectattr("tur", "equalto", "geri")|list %}
++    {% set ayrilanlar = d|selectattr("tur", "equalto", "ayrildi")|list %}
++    {% set pasiflesecek = (sonuc.pasife_alinan or 0) + (sonuc.ayrilan or 0) %}
++    {% set eksik_sayfalar = (r.sayfalar or [])|selectattr("bulunamadi")|list %}
++    {% set toplu_pasif = sonuc.pasife_alinan and sonuc.mevcut_aktif and sonuc.pasife_alinan * 10 >= sonuc.mevcut_aktif * 3 %}
++    {% set guncellenen = sonuc.guncellenen or 0 %}
++    {% set degismeyen = sonuc.degismeyen or 0 %}
++    {% set atlanan = r.atlanan_satir or 0 %}
++
++    <section class="sayfa-baslik sayfa-hero">
++        <div>
++            <p class="ust-etiket">ÖNİZLEME · HENÜZ HİÇBİR KAYIT DEĞİŞMEDİ</p>
++            <h1>Excel aktarımını kontrol edin</h1>
++            <p class="soluk"><strong>{{ dosya }}</strong> dosyasından {{ sonuc.satir }} kayıt okundu ve sistemdeki kartlarla karşılaştırıldı. Aşağıdakiler, onaylarsanız ne olacağını gösterir.</p>
++        </div>
++    </section>
++
++    {% if toplu_pasif or eksik_sayfalar %}
++    <div class="bildirim hata onizleme-dikkat" role="alert">
++        <strong>Onaylamadan önce kontrol edin.</strong>
++        {% if eksik_sayfalar %}
++        <p>{{ eksik_sayfalar|map(attribute="sayfa")|join(", ") }} sayfası dosyada yok; bu sayfadan gelmiş kartların hepsi pasifleşir.</p>
++        {% endif %}
++        {% if toplu_pasif %}
++        <p>Sistemde Excel'den gelen {{ sonuc.mevcut_aktif }} aktif karttan {{ sonuc.pasife_alinan }} tanesi pasifleşecek. Yanlış veya eksik bir dosya seçilmiş olabilir.</p>
++        {% endif %}
+     </div>
+-    <form action="{{ url_for('yukle_onay') }}" method="post" class="sayfalama">
+-        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+-        <button class="buton buton-ana" type="submit">Değişiklikleri Uygula</button>
+-    </form>
+     {% endif %}
+-    <a class="buton buton-hayalet" href="{{ url_for('yonetim') }}">Yönetime Dön</a>
+-</section>
++
++    <section class="onizleme-ozet" aria-label="Aktarımın kartlara etkisi">
++        <article class="istatistik ozet-yeni{% if not sonuc.yeni %} sifir{% endif %}">
++            <span>Yeni kart</span><strong>{{ sonuc.yeni }}</strong>
++            <small>Excel'de olup sistemde olmayan kayıtlar oluşturulur.</small>
++        </article>
++        <article class="istatistik ozet-guncel{% if not guncellenen %} sifir{% endif %}">
++            <span>Güncellenecek</span><strong>{{ guncellenen }}</strong>
++            <small>Tarih, adet veya durum Excel'deki değere çekilir.</small>
++        </article>
++        <article class="istatistik ozet-ayni{% if not degismeyen %} sifir{% endif %}">
++            <span>Değişmeyecek</span><strong>{{ degismeyen }}</strong>
++            <small>Excel ile sistem zaten aynı; bu kartlara dokunulmaz.</small>
++        </article>
++        <article class="istatistik ozet-pasif{% if not pasiflesecek %} sifir{% endif %}">
++            <span>Pasifleşecek</span><strong>{{ pasiflesecek }}</strong>
++            <small>Excel'de artık yok veya NO'su başka talebe verilmiş; silinmez, ekranlardan kalkar.</small>
++        </article>
++        <article class="istatistik ozet-uyari{% if not sonuc.uyari %} sifir{% endif %}">
++            <span>Veri uyarısı</span><strong>{{ sonuc.uyari }}</strong>
++            <small>Aktarımı engellemez; aşağıda neyi etkilediği yazıyor.</small>
++        </article>
++    </section>
++
++    <section class="panel-kutu">
++        <div class="panel-baslik">
++            <div>
++                <p class="ust-etiket">1 · EXCEL'DEN OKUNANLAR</p>
++                <h2>Sayfa bazında kayıtlar</h2>
++                <p class="panel-aciklama">Talep NO ve Kart Stok No'su dolu her satır bir karttır. Gizli satır ve sütunlar da okunur; tamamen boş satırlar yok sayılır.</p>
++            </div>
++        </div>
++        <div class="sayfa-ozet-grid">
++            {% for s in r.sayfalar or [] %}
++            <article class="sayfa-ozet-kart{% if s.bulunamadi %} eksik{% endif %}">
++                <header><strong>{{ s.sayfa }}</strong>{{ tur_rozeti(s.kod) }}</header>
++                {% if s.bulunamadi %}
++                <p class="sayfa-ozet-sayi">Sayfa dosyada yok.</p>
++                {% else %}
++                <p class="sayfa-ozet-sayi"><strong>{{ s.kayit }}</strong> kart okundu</p>
++                <ul>
++                    {% if s.gizli_kayit %}<li>{{ s.gizli_kayit }} tanesi gizli satırda; normal işlendi.</li>{% endif %}
++                    <li>{% if s.atlanan %}{{ s.atlanan|length }} satır kart sayılmadı: {{ s.atlanan_araliklar }}{% else %}Kart sayılmayan satır yok.{% endif %}</li>
++                    <li>{{ s.bos_satir }} boş satır atlandı.</li>
++                </ul>
++                {% endif %}
++            </article>
++            {% endfor %}
++        </div>
++    </section>
++
++    {% if r.uyari_gruplari or atlanan %}
++    <section class="panel-kutu">
++        <div class="panel-baslik">
++            <div>
++                <p class="ust-etiket">2 · KONTROL EDİN</p>
++                <h2>Onaylamadan önce bakılması gerekenler</h2>
++                <p class="panel-aciklama">Bunlar aktarımı durdurmaz, ama ilgili kartların ekranlarda nasıl görüneceğini etkiler. Excel'de düzeltip yeniden yüklerseniz uyarılar kalkar.</p>
++            </div>
++        </div>
++        <ul class="kontrol-listesi">
++            {% for g in r.uyari_gruplari or [] %}
++            <li class="kontrol-madde">
++                <span class="kontrol-sayi uyari">{{ g.adet }}</span>
++                <div>
++                    <strong>{{ g.baslik }}</strong>
++                    <p>{{ g.aciklama }}</p>
++                    <p class="kontrol-yer">{% for y in g.yerler %}{{ y.sayfa }}: satır {{ y.satirlar }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
++                    {% if g.tur == "plan_baslangic" %}
++                    <details class="acilir">
++                        <summary>Satır ayrıntısı</summary>
++                        <ul>{% for m in g.mesajlar %}<li>{{ m }}</li>{% endfor %}</ul>
++                    </details>
++                    {% endif %}
++                </div>
++            </li>
++            {% endfor %}
++            {% if atlanan %}
++            <li class="kontrol-madde">
++                <span class="kontrol-sayi">{{ atlanan }}</span>
++                <div>
++                    <strong>Kart sayılmayan satırlar</strong>
++                    <p>Bu satırlarda Talep NO veya Kart Stok No yok; adet, DURUM ve plan/teslim tarihi de bulunmadığı için talep kaydı değil, eski veya şablon kalıntısı kabul edildi. Kart olması gerekiyorsa Excel'de Talep NO ve Kart Stok No'yu doldurun.</p>
++                    <details class="acilir">
++                        <summary>Hangi satırlar, hangi hücreler dolu?</summary>
++                        <div class="tablo-kapsayici tablo-dar">
++                            <table>
++                                <thead><tr><th>Sayfa</th><th>Satırlar</th><th>Dolu hücreler</th><th>Gizli</th></tr></thead>
++                                <tbody>
++                                {% for s in r.sayfalar or [] %}{% for a in s.atlanan_gruplari or [] %}
++                                    <tr>
++                                        <td>{{ s.sayfa }}</td>
++                                        <td>{{ a.satirlar }} <small class="kaynak-metni">{{ a.adet }} satır</small></td>
++                                        <td>{{ a.hucreler|join(", ") }}</td>
++                                        <td>{% if a.gizli == a.adet %}Hepsi{% elif a.gizli %}{{ a.gizli }} / {{ a.adet }}{% else %}Hayır{% endif %}</td>
++                                    </tr>
++                                {% endfor %}{% endfor %}
++                                </tbody>
++                            </table>
++                        </div>
++                    </details>
++                </div>
++            </li>
++            {% endif %}
++        </ul>
++    </section>
++    {% endif %}
++
++    <section class="panel-kutu">
++        <div class="panel-baslik">
++            <div>
++                <p class="ust-etiket">{{ 3 if (r.uyari_gruplari or atlanan) else 2 }} · KARTLARA ETKİSİ</p>
++                <h2>Onaylarsanız değişecek kartlar</h2>
++                <p class="panel-aciklama">Excel ana kaynaktır: tarih, adet ve geçerli DURUM Excel'deki değere çekilir. Operatör notları, gizlenen kartlar ve elle eklenen kartlar korunur.</p>
++            </div>
++        </div>
++
++        {% if not d %}
++        <p class="bos-durum">Kartlarda değişiklik yok: Excel ve sistem aynı. Onaylamak yalnız yükleme kaydı ve yedek oluşturur.</p>
++        {% endif %}
++
++        {% if ayrilanlar %}
++        <div class="etki-grup">
++            <h3><span class="durum-rozet kotu">{{ ayrilanlar|length }}</span> NO'su başka talebe verilmiş kartlar ayrılacak</h3>
++            <p class="etki-aciklama">Excel'de bu NO artık farklı bir Talep NO taşıyor. Eski talebin kartı notları, operatörü ve durumuyla birlikte pasifleşir ve Yönetim ekranında kalır; yeni talep için Excel verisiyle temiz bir kart açılır (yeni kartlar listesinde). Böylece eski talebin durumu veya notu yeni talebe geçmez. NO'yu yanlışlıkla değiştirdiyseniz Excel'i düzeltip yeniden yükleyin.</p>
++            <div class="tablo-kapsayici">
++                <table>
++                    <thead><tr><th>Tür</th><th>NO</th><th>Eski talep</th><th>Eski durum</th><th>Excel'deki yeni talep</th></tr></thead>
++                    <tbody>
++                    {% for k in ayrilanlar %}
++                        <tr>
++                            <td>{{ tur_rozeti(k.sayfa) }}</td><td>{{ k.sira or "—" }}</td>
++                            <td>{{ k.talep_no }} · {{ k.stok_no }}</td>
++                            <td>{{ durum_rozeti(k.durum) }}</td>
++                            <td><strong>{{ k.yerine.talep_no }} · {{ k.yerine.stok_no }}</strong></td>
++                        </tr>
++                    {% endfor %}
++                    </tbody>
++                </table>
++            </div>
++        </div>
++        {% endif %}
++
++        {% if pasifler %}
++        <div class="etki-grup">
++            <h3><span class="durum-rozet kotu">{{ pasifler|length }}</span> Excel'de artık olmayan kartlar pasifleşecek</h3>
++            <p class="etki-aciklama">Kart silinmez: "kaynakta yok" olarak işaretlenir, Pano, Operatör ve Monitör ekranlarından kalkar, Yönetim ekranında listelenir. Satır Excel'e geri eklenirse aynı kart notları ve geçmişiyle geri gelir.</p>
++            <div class="tablo-kapsayici">
++                <table>
++                    <thead><tr><th>Tür</th><th>NO</th><th>Talep NO</th><th>Kart Stok No</th><th>Talep sahibi</th><th>Son durum</th></tr></thead>
++                    <tbody>
++                    {% for k in pasifler %}
++                        <tr>
++                            <td>{{ tur_rozeti(k.sayfa) }}</td><td>{{ k.sira or "—" }}</td>
++                            <td>{{ k.talep_no }}</td><td>{{ k.stok_no }}</td><td>{{ k.talep_sahibi or "—" }}</td>
++                            <td>{{ durum_rozeti(k.durum) }}</td>
++                        </tr>
++                    {% endfor %}
++                    </tbody>
++                </table>
++            </div>
++        </div>
++        {% endif %}
++
++        {% for baslik, aciklama, grup, rozet in [
++            ("güncellenecek", "Yalnız değişen alanlar gösteriliyor. Sarı satırlar kartın iş durumunu veya tamamlanan adedini değiştirir.", guncellenecek, "uyari"),
++            ("Excel'e geri eklendiği için yeniden aktifleşecek", "Bu kartlar daha önce Excel'de yoktu; aynı kart notları ve geçmişiyle geri gelir.", geri_gelenler, "iyi")] if grup %}
++        <div class="etki-grup">
++            <h3><span class="durum-rozet {{ rozet }}">{{ grup|length }}</span> Kart {{ baslik }}</h3>
++            <p class="etki-aciklama">{{ aciklama }}</p>
++            <div class="fark-listesi">
++                {% for k in grup %}
++                <article class="fark-karti">
++                    <header>
++                        <strong>{{ k.talep_no }} · {{ k.stok_no }}</strong>
++                        {{ tur_rozeti(k.sayfa) }}
++                        <small>NO {{ k.sira or "—" }} · Kart #{{ k.id }}</small>
++                    </header>
++                    <table>
++                        <thead><tr><th>Alan</th><th>Şu an</th><th>Onaydan sonra</th></tr></thead>
++                        <tbody>
++                        {% for f in k.farklar if f.anahtar != "source_active" %}
++                            <tr{% if f.anahtar in ("durum", "tamamlanan_adet") %} class="onemli"{% endif %}>
++                                <td>{{ f.alan }}</td>
++                                <td class="eski">{{ f.eski|onizleme_deger(f.anahtar) }}</td>
++                                <td class="yeni">{{ f.yeni|onizleme_deger(f.anahtar) }}</td>
++                            </tr>
++                        {% else %}
++                            <tr><td colspan="3">Alan değişikliği yok; yalnız yeniden aktifleşir.</td></tr>
++                        {% endfor %}
++                        </tbody>
++                    </table>
++                </article>
++                {% endfor %}
++            </div>
++        </div>
++        {% endfor %}
++
++        {% if yeniler %}
++        <div class="etki-grup">
++            <h3><span class="durum-rozet iyi">{{ yeniler|length }}</span> Yeni kart oluşturulacak</h3>
++            <p class="etki-aciklama">Bu kayıtlar sistemde yok. "Durum yok" olanlar oluşturulur ama DURUM atanana kadar operasyon ekranlarında görünmez. Excel'deki durum metni sistemdeki karşılığından farklıysa altında yazar.</p>
++            {% if yeniler|length > 12 %}
++            <details class="acilir">
++                <summary>{{ yeniler|length }} yeni kartın listesini göster</summary>
++            {% endif %}
++            <div class="tablo-kapsayici">
++                <table>
++                    <thead><tr><th>Tür</th><th>NO</th><th>Talep NO</th><th>Kart Stok No</th><th>Talep sahibi</th><th>Adet</th><th>Durum</th><th>Plan başlangıç</th><th>Plan teslim</th><th>Gerçekleşen teslim</th></tr></thead>
++                    <tbody>
++                    {% for k in yeniler %}
++                        <tr>
++                            <td>{{ tur_rozeti(k.sayfa) }}</td><td>{{ k.sira or "—" }}</td>
++                            <td>{{ k.talep_no }}</td><td>{{ k.stok_no }}</td><td>{{ k.talep_sahibi or "—" }}</td>
++                            <td>{{ k.toplam_adet }}</td><td>{{ durum_rozeti(k.durum, k.excel_durum) }}</td>
++                            <td>{{ k.plan_baslama|gun }}</td><td>{{ k.plan_teslim|gun }}</td><td>{{ k.gerceklesen_teslim|gun }}</td>
++                        </tr>
++                    {% endfor %}
++                    </tbody>
++                </table>
++            </div>
++            {% if yeniler|length > 12 %}</details>{% endif %}
++        </div>
++        {% endif %}
++    </section>
++
++    <section class="panel-kutu onizleme-bilgi">
++        <p class="ust-etiket">ONAYLARSANIZ</p>
++        <ul>
++            <li>Önce kart, işlem logu ve yükleme geçmişi dosyalarının yedeği alınır.</li>
++            <li>Değişiklikler tek seferde uygulanır; bir hata olursa hiçbiri uygulanmaz.</li>
++            <li>Excel'de boş bırakılan tarih, kartta da temizlenir. DURUM boş veya tanınmıyorsa kartın mevcut iş akışı korunur.</li>
++            <li>Bu sayfa açıkken dosya veya kartlar değişirse aktarım uygulanmaz ve yeni önizleme istenir.</li>
++        </ul>
++    </section>
++
++    <div class="onizleme-aksiyon">
++        <p>
++            <strong>{{ sonuc.yeni }} yeni · {{ guncellenen }} güncelleme · {{ pasiflesecek }} pasifleşme</strong>
++            <span>Onaylayana kadar hiçbir kayıt değişmez.</span>
++        </p>
++        <div class="buton-grup">
++            <a class="buton buton-hayalet" href="{{ url_for('yonetim') }}">Vazgeç</a>
++            <form action="{{ url_for('yukle_onay') }}" method="post" data-tek-gonderim>
++                <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
++                <button class="buton {{ 'buton-tehlike' if toplu_pasif else 'buton-basari' }}" type="submit">{{ "Yine de uygula" if toplu_pasif else "Değişiklikleri uygula" }}</button>
++            </form>
++        </div>
++    </div>
++    <script>
++    // Excel COM okuması birkaç saniye sürer; ikinci tıklama kullanılmış önizlemeye çarpmasın.
++    document.querySelectorAll("form[data-tek-gonderim]").forEach((form) => {
++        form.addEventListener("submit", () => {
++            const buton = form.querySelector("button[type=submit]");
++            buton.disabled = true;
++            buton.textContent = "Uygulanıyor…";
++        });
++    });
++    </script>
++{% endif %}
++</div>
+ {% endblock %}
+--- before/templates/yonetim.html
++++ after/templates/yonetim.html
+@@ -21,7 +21,7 @@
+                 <div>
+                     <p class="ust-etiket">VERİ AKTARIMI</p>
+                     <h2>Plan Excel'ini Aktar</h2>
+-                    <p class="panel-aciklama">MAKİNE (zorunlu), ELDE DİZGİ ve EÜM sayfaları okunur; hidden kolonlar atlanır. ELDE DİZGİ ve EÜM opsiyoneldir.</p>
++                    <p class="panel-aciklama">MAKİNE (zorunlu), ELDE DİZGİ ve EÜM sayfaları okunur; ELDE DİZGİ ve EÜM opsiyoneldir. Gizli satır ve sütunlar da okunur, sütunlar başlık adıyla eşlenir. Talep NO ve Kart Stok No olmayan satırlar kart sayılmaz ve önizlemede listelenir.</p>
+                 </div>
+             </div>
+             <form method="post" action="{{ url_for('yukle') }}" enctype="multipart/form-data" class="yukleme-form">
+--- before/templates/base.html
++++ after/templates/base.html
+@@ -5,7 +5,7 @@
+     <meta name="viewport" content="width=device-width, initial-scale=1">
+     <meta name="csrf-token" content="{{ csrf_token }}">
+     <title>{% block title %}PDGM İş Takip{% endblock %}</title>
+-    <link rel="stylesheet" href="{{ url_for('static', filename='stil.css') }}?v=20260922">
++    <link rel="stylesheet" href="{{ url_for('static', filename='stil.css') }}?v=20260926">
+     {% block head %}{% endblock %}
+ </head>
+ <body class="{% block body_class %}{% endblock %}">
+--- before/static/stil.css
++++ after/static/stil.css
+@@ -2387,3 +2387,357 @@
+     scrollbar-width: thin;
+     scrollbar-color: #b8c3c8 transparent;
+ }
++
++/* --------------------------------------------------------------------------
++   Import önizleme
++---------------------------------------------------------------------------- */
++
++.onizleme-dikkat {
++    line-height: 1.55;
++}
++
++/* Bu sayfanın işi açıklamak: yardımcı metinler genel 11px yerine okunur boyutta. */
++.onizleme-sayfa .panel-aciklama {
++    max-width: 920px;
++    font-size: 13px;
++}
++
++/* Boşluksuz uzun dosya adı / hücre metni dar ekranda sayfayı genişletmesin. */
++.onizleme-sayfa .sayfa-hero p,
++.sorun-listesi li,
++.kontrol-madde,
++.fark-karti header {
++    overflow-wrap: anywhere;
++}
++
++.onizleme-dikkat p {
++    margin: 4px 0 0;
++}
++
++.onizleme-ozet {
++    display: grid;
++    grid-template-columns: repeat(5, minmax(0, 1fr));
++    gap: 14px;
++}
++
++.onizleme-ozet .istatistik {
++    min-height: 0;
++    align-content: start;
++}
++
++.onizleme-ozet .istatistik small {
++    color: var(--soluk);
++    font-size: 12px;
++    line-height: 1.45;
++}
++
++.onizleme-ozet .istatistik.sifir strong {
++    color: #a3adb2;
++}
++
++.ozet-yeni { border-top-color: var(--iyi); }
++.ozet-guncel { border-top-color: #d18a00; }
++.ozet-ayni { border-top-color: #b8c2c7; }
++.ozet-pasif { border-top-color: var(--kotu); }
++.ozet-uyari { border-top-color: var(--uyari); }
++
++.sayfa-ozet-grid {
++    display: grid;
++    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
++    gap: 12px;
++}
++
++.sayfa-ozet-kart {
++    padding: 14px 16px;
++    border: 1px solid var(--cizgi);
++    border-radius: 12px;
++    background: #fafbfc;
++}
++
++.sayfa-ozet-kart header {
++    display: flex;
++    justify-content: space-between;
++    align-items: center;
++    gap: 8px;
++}
++
++.sayfa-ozet-kart header strong {
++    font-size: 15px;
++}
++
++.sayfa-ozet-kart.eksik {
++    background: var(--kotu-bg);
++    border-color: #efb9b9;
++}
++
++.sayfa-ozet-sayi {
++    margin: 10px 0 8px;
++    color: var(--soluk);
++    font-size: 13px;
++}
++
++.sayfa-ozet-sayi strong {
++    margin-right: 4px;
++    color: var(--ana);
++    font-size: 28px;
++}
++
++.sayfa-ozet-kart ul {
++    margin: 0;
++    padding-left: 18px;
++    color: var(--soluk);
++    font-size: 13px;
++    line-height: 1.6;
++}
++
++.kontrol-listesi {
++    margin: 0;
++    padding: 0;
++    display: grid;
++    gap: 12px;
++    list-style: none;
++}
++
++.kontrol-madde {
++    padding: 14px;
++    display: grid;
++    grid-template-columns: 44px minmax(0, 1fr);
++    gap: 14px;
++    border: 1px solid var(--cizgi);
++    border-radius: 12px;
++}
++
++.kontrol-sayi {
++    width: 44px;
++    height: 44px;
++    display: grid;
++    place-items: center;
++    border-radius: 12px;
++    background: var(--notr-bg);
++    color: var(--notr);
++    font-size: 16px;
++    font-weight: 800;
++}
++
++.kontrol-sayi.uyari {
++    background: var(--uyari-bg);
++    color: var(--uyari);
++}
++
++.kontrol-madde strong {
++    font-size: 14px;
++}
++
++.kontrol-madde p {
++    margin: 4px 0 0;
++    max-width: 920px;
++    color: var(--soluk);
++    font-size: 13px;
++    line-height: 1.55;
++}
++
++.kontrol-madde p.kontrol-yer {
++    color: var(--yazi);
++    font-weight: 700;
++}
++
++.acilir {
++    margin-top: 10px;
++}
++
++.acilir > summary {
++    width: fit-content;
++    cursor: pointer;
++    color: var(--ana-2);
++    font-size: 13px;
++    font-weight: 700;
++}
++
++.acilir[open] > summary {
++    margin-bottom: 10px;
++}
++
++.acilir ul {
++    margin: 0;
++    padding-left: 18px;
++    color: var(--soluk);
++    font-size: 12px;
++    line-height: 1.6;
++}
++
++.tablo-dar table,
++.fark-karti table {
++    min-width: 0;
++}
++
++.kaynak-metni {
++    display: block;
++    margin-top: 3px;
++    color: var(--soluk);
++    font-size: 10px;
++    font-weight: 400;
++}
++
++.etki-grup + .etki-grup {
++    margin-top: 22px;
++    padding-top: 18px;
++    border-top: 1px solid #edf1f2;
++}
++
++.etki-grup h3 {
++    margin: 0 0 4px;
++    display: flex;
++    align-items: center;
++    gap: 8px;
++    font-size: 16px;
++}
++
++.etki-aciklama {
++    max-width: 920px;
++    margin: 0 0 12px;
++    color: var(--soluk);
++    font-size: 13px;
++    line-height: 1.55;
++}
++
++.bos-durum {
++    margin: 0;
++    padding: 18px;
++    border: 1px dashed var(--cizgi);
++    border-radius: 12px;
++    color: var(--soluk);
++    text-align: center;
++}
++
++.fark-listesi {
++    display: grid;
++    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
++    gap: 12px;
++}
++
++.fark-karti {
++    overflow: hidden;
++    border: 1px solid var(--cizgi);
++    border-radius: 12px;
++}
++
++.fark-karti header {
++    padding: 10px 12px;
++    display: flex;
++    flex-wrap: wrap;
++    align-items: center;
++    gap: 6px 10px;
++    background: #f6f8f9;
++    font-size: 13px;
++}
++
++.fark-karti header small {
++    color: var(--soluk);
++}
++
++.fark-karti td.eski {
++    color: var(--soluk);
++}
++
++.fark-karti td.yeni {
++    font-weight: 700;
++}
++
++.fark-karti tr.onemli td {
++    background: var(--uyari-bg);
++}
++
++.onizleme-bilgi ul {
++    margin: 8px 0 0;
++    padding-left: 18px;
++    color: var(--soluk);
++    font-size: 13px;
++    line-height: 1.7;
++}
++
++.sorun-listesi {
++    margin: 0;
++    padding: 0;
++    display: grid;
++    gap: 8px;
++    list-style: none;
++}
++
++.sorun-listesi li {
++    padding: 11px 13px;
++    display: grid;
++    grid-template-columns: minmax(160px, max-content) minmax(0, 1fr);
++    gap: 14px;
++    border: 1px solid #efb9b9;
++    border-radius: 10px;
++    background: var(--kotu-bg);
++    color: #6f2424;
++    font-size: 13px;
++    line-height: 1.5;
++}
++
++.sorun-konum {
++    color: var(--kotu);
++    font-weight: 800;
++    white-space: nowrap;
++}
++
++.onizleme-aksiyon {
++    position: sticky;
++    bottom: 12px;
++    z-index: 20;
++    padding: 14px 18px;
++    display: flex;
++    flex-wrap: wrap;
++    justify-content: space-between;
++    align-items: center;
++    gap: 14px;
++    border-radius: 14px;
++    background: rgba(15, 32, 39, .97);
++    color: #fff;
++    box-shadow: 0 14px 40px rgba(0, 0, 0, .18);
++}
++
++.onizleme-aksiyon p {
++    margin: 0;
++    display: grid;
++    gap: 2px;
++}
++
++.onizleme-aksiyon p span {
++    color: #b9c7cd;
++    font-size: 12px;
++}
++
++.onizleme-aksiyon form {
++    margin: 0;
++}
++
++.onizleme-aksiyon .buton-hayalet {
++    background: rgba(255, 255, 255, .08);
++    color: #fff;
++    border-color: rgba(255, 255, 255, .18);
++}
++
++@media (max-width: 1100px) {
++    .onizleme-ozet {
++        grid-template-columns: repeat(3, minmax(0, 1fr));
++    }
++}
++
++@media (max-width: 640px) {
++    .onizleme-ozet {
++        grid-template-columns: repeat(2, minmax(0, 1fr));
++    }
++
++    .kontrol-madde,
++    .sorun-listesi li,
++    .fark-listesi {
++        grid-template-columns: 1fr;
++    }
++
++    .onizleme-aksiyon {
++        bottom: 0;
++        border-radius: 12px 12px 0 0;
++    }
++}
+--- before/tests/test_excel_com.py
++++ after/tests/test_excel_com.py
+@@ -27,6 +27,14 @@
+         ex.excelden_aktar(str(path),'tester')
+         self.assertEqual(before,{k['source_row_id']:k['id'] for k in depo._kartlar})
+ 
++    def test_text_cells_not_reinterpreted_by_excel(self):
++        # Value2 ile yazılan metni Excel sayı/tarih/formül sanmamalı.
++        path=self.book({'MAKİNE':[fixtures.row(1,request='001234',stock='1-2'),
++                                  fixtures.row(2,request='0045',stock='3/4')]})
++        ex.excelden_aktar(str(path),'tester')
++        self.assertEqual({k['source_row_id']:(k['talep_no'],k['stok_no']) for k in depo._kartlar},
++                         {'NO:1':('001234','1-2'),'NO:2':('0045','3/4')})
++
+     def test_real_snapshot_hidden_identity_1904_and_reupload(self):
+         path=self.book({'MAKİNE':[fixtures.row(1)],'EÜM':[
+             fixtures.row(1,start=None,end=None,planned=to_excel(datetime(2026,9,17),CALENDAR_MAC_1904))
+@@ -40,7 +48,8 @@
+         before={k['dizgi_kod']:k for k in depo.kartlari_getir()}
+         self.assertEqual(before['MAKINE']['source_row_id'],'NO:1')
+         self.assertEqual(before['EUM']['plan_baslama'],'2026-09-14')
+-        self.assertFalse(before['MAKINE'].get('pcb'))
++        # Gizli ama tekil başlıklı sütun artık okunur (gizlemek veriyi silmez).
++        self.assertEqual(before['MAKINE'].get('pcb'),'PCB')
+         wb=openpyxl.load_workbook(path)
+         wb['MAKİNE']['F2']='2026-09-25'
+         wb['MAKİNE']['H2']='TESLİM EDİLDİ'
+--- before/tests/test_audit_fixes.py
++++ after/tests/test_audit_fixes.py
+@@ -100,7 +100,9 @@
+             with path.open('rb') as f:
+                 r=self.client.post('/yonetim/yukle',data={'_csrf_token':'test-token','onizleme':'1','dosya':(f,'plan.xlsx')})
+             self.assertEqual(r.status_code,200)
+-            self.assertIn('3 → 0',r.get_data(as_text=True))
++            # Önizleme tamamlanan adedin 3'ten 0'a ineceğini "Şu an / Onaydan sonra" olarak gösterir.
++            self.assertRegex(r.get_data(as_text=True),
++                             r'<td>Tamamlanan Adet</td>\s*<td class="eski">3</td>\s*<td class="yeni">0</td>')
+             self.assertEqual(depo._kartlar,before)
+             self.assertEqual(Path(depo.KARTLAR_DOSYA).read_bytes(),disk)
+             self.post('/api/not',{'kart_id':k['id'],'not':'Önizlemeden sonraki not'})
+--- before/tests/test_excel_sync.py
++++ after/tests/test_excel_sync.py
+@@ -145,7 +145,9 @@
+     def test_blank_or_invalid_status_preserves_manual_progress_notes(self):
+         r=row(1,status='DİZGİDE'); self.upload({'MAKİNE':[r]})
+         k=depo._kartlar[0]; k.update(tamamlanan_adet=2,operator='worker',aciklama='history')
+-        for status in [None,'UNKNOWN']:
++        # Boş DURUM ve bilerek durumsuz bırakılan kaynak durumu iş akışını korur.
++        # Tanınmayan diğer yazımlar artık importu durdurur (test_onceki_hatalar).
++        for status in [None,'MALZEME TEDARİK']:
+             r[7]=status; r[5]='2026-09-25'; result=self.upload({'MAKİNE':[r]})
+             k=self.cards()[1]
+             self.assertEqual((k['durum'],k['tamamlanan_adet'],k['operator'],k['aciklama']),
+--- before/tests/test_gercek_excel.py
++++ after/tests/test_gercek_excel.py
+@@ -0,0 +1,675 @@
++"""Gerçek PDGM Excel'i (ve değiştirilmiş kopyaları) ile uçtan uca import senaryoları.
++
++Üretim data klasörüne dokunulmaz: depo yolları her testte TemporaryDirectory'ye
++yönlenir, kaynak Excel yalnız okunur, değişiklikler geçici kopyalarda yapılır.
++Varsayılan koşu COM yerine dosyanın kendisini snapshot sayar (dosyada formül
++yok; COM ile birebir aynı sonuç ayrıca doğrulanır). PDGM_TEST_EXCEL_COM=1 ile
++aynı senaryoların bir bölümü gerçek Microsoft Excel üzerinden de koşar.
++"""
++import copy
++import os
++import shutil
++import unittest
++from datetime import date, datetime, timedelta
++from pathlib import Path
++from unittest.mock import patch
++
++import openpyxl
++from openpyxl.utils.datetime import from_excel
++
++import depo
++import excel_araclari as ex
++from tests import test_excel_sync as fixtures, test_ui as ui
++from tests.test_excel_sync import ROOT, row
++
++GERCEK_EXCEL = ROOT / 'PDGM_Kart_dizgi_Talepleri_Üretim_Takvimi.xlsx'
++
++# Parser'dan bağımsız referans: bu dosyanın sabit sütun harfleri.
++# (sayfa, kod, başlık satırı, NO, Talep, Stok, Adet, Dizgi Başlama, Plan Teslim, Gerçekleşen, DURUM)
++DUZEN = [
++    ('MAKİNE', 'MAKINE', 4, 'C', 'D', 'I', 'J', 'U', 'W', 'X', 'Y'),
++    ('ELDE DİZGİ', 'ELLE', 2, 'B', 'C', 'H', 'I', 'S', 'T', 'U', 'V'),
++    ('EÜM', 'EUM', 2, 'B', 'C', 'H', 'I', None, 'U', 'V', 'W'),
++]
++BEKLENEN_DURUM = {
++    'TESLİM EDİLDİ': 'TESLİM EDİLDİ', 'DİZGİDE': 'DİZGİDE', 'PLANA ALINDI': 'PLANA ALINDI',
++    'DİZGİDE VE MALZEME BEKLENİYOR': 'DİZGİDE', 'DİZGİ İÇİN BEKLİYOR': 'PLANA ALINDI',
++    'ÜRETİM DEVAM EDİYOR': 'DİZGİDE', 'MALZEME TEDARİK': None, 'PDGM ÖNERİ': None, None: None,
++}
++# EÜM'de başlangıç = "NN. hafta (G.AA haftası)" metninin Pazartesi'si (elle hesaplandı).
++EUM_BASLANGIC = {1: '2025-06-02', 2: '2025-06-09', 3: '2025-06-16', 4: '2025-06-23', 5: '2025-06-23',
++                 6: '2025-06-23', 7: '2026-07-27', 8: '2026-09-07', 9: '2026-09-07'}
++MAKINE_KALINTI = '211–225, 229–253, 255–259, 262, 265–268, 270–271'
++EUM_KALINTI = '10, 205, 208, 211'
++
++
++def _bos(v):
++    return v is None or (isinstance(v, str) and not v.strip())
++
++
++def _iso(v):
++    if _bos(v):
++        return None
++    if isinstance(v, (int, float)):
++        v = from_excel(v)
++    return v.strftime('%Y-%m-%d')
++
++
++def referans_kayitlar(path):
++    """Talep NO ve Kart Stok No dolu satırlar: {(kod, NO): beklenen alanlar}."""
++    wb = openpyxl.load_workbook(path, data_only=True)
++    sonuc = {}
++    for sayfa, kod, baslik, c_no, c_talep, c_stok, c_adet, c_bas, c_tes, c_ger, c_durum in DUZEN:
++        ws = wb[sayfa]
++        for r in range(baslik + 1, ws.max_row + 1):
++            talep, stok = ws[f'{c_talep}{r}'].value, ws[f'{c_stok}{r}'].value
++            if _bos(talep) or _bos(stok):
++                continue
++            no = int(ws[f'{c_no}{r}'].value)
++            durum_ham = ws[f'{c_durum}{r}'].value
++            durum_ham = None if _bos(durum_ham) else durum_ham.strip()
++            sonuc[(kod, no)] = {
++                'talep_no': str(talep).strip(), 'stok_no': str(stok).strip(),
++                'toplam_adet': int(str(ws[f'{c_adet}{r}'].value).split()[0]),
++                'plan_baslama': EUM_BASLANGIC[no] if kod == 'EUM' else _iso(ws[f'{c_bas}{r}'].value),
++                'plan_teslim': _iso(ws[f'{c_tes}{r}'].value),
++                'gerceklesen_teslim': _iso(ws[f'{c_ger}{r}'].value),
++                'excel_durum': durum_ham, 'durum': BEKLENEN_DURUM[durum_ham], 'satir': r,
++            }
++    wb.close()
++    return sonuc
++
++
++@unittest.skipUnless(GERCEK_EXCEL.exists(), 'Gerçek PDGM Excel dosyası proje kökünde yok')
++class GercekExcelTests(unittest.TestCase):
++    setUp = fixtures.SyncTests.setUp
++    load_app = ui.UITests.load_app
++
++    # --- yardımcılar -----------------------------------------------------
++    def kopya(self, degistir=None, ad='kopya.xlsx'):
++        wb = openpyxl.load_workbook(GERCEK_EXCEL)
++        if degistir:
++            degistir(wb)
++        path = self.root / ad
++        wb.save(path)
++        wb.close()
++        return path
++
++    def snapshot_yamasi(self):
++        def snapshot(kaynak):
++            hedef = self.root / 'snapshot.xlsx'
++            shutil.copy2(kaynak, hedef)
++            return str(hedef)
++        return patch.object(ex, 'excel_deger_snapshot_olustur', snapshot)
++
++    def yukle(self, path=GERCEK_EXCEL, **kw):
++        with self.snapshot_yamasi():
++            return ex.excelden_aktar(str(path), 'tester', **kw)
++
++    def kartlar(self):
++        return {(k['source_sheet'], int(k['source_row_id'][3:])): k for k in depo._kartlar
++                if k.get('kaynak') == 'EXCEL'}
++
++    def disk(self):
++        return {p: Path(p).read_bytes() for p in (depo.KARTLAR_DOSYA, depo.LOG_DOSYA, depo.YUKLEME_DOSYA)}
++
++    # --- 1: orijinal dosya ------------------------------------------------
++    def test_orijinal_excel_eksiksiz_ve_dogru_aktarilir(self):
++        beklenen = referans_kayitlar(GERCEK_EXCEL)
++        self.assertEqual(len(beklenen), 44)
++        sonuc = self.yukle()
++        rapor = sonuc['kaynak_raporu']
++        sayfa = {s['kod']: s for s in rapor['sayfalar']}
++        self.assertEqual({k: s['kayit'] for k, s in sayfa.items()}, {'MAKINE': 15, 'ELLE': 20, 'EUM': 9})
++        self.assertEqual(sayfa['MAKINE']['atlanan_araliklar'], MAKINE_KALINTI)
++        self.assertEqual(sayfa['EUM']['atlanan_araliklar'], EUM_KALINTI)
++        self.assertEqual(sayfa['ELLE']['atlanan'], [])
++        self.assertTrue(all(a['gizli'] for s in sayfa.values() for a in s['atlanan']))
++        self.assertEqual((sonuc['yeni'], sonuc['guncellenen'], sonuc['pasife_alinan']), (44, 0, 0))
++        # Önizlemede uyarılar türüne göre gruplanır (9 uyarı -> 3 grup).
++        self.assertEqual({(g['tur'], g['baslik']): (g['adet'], g['yerler']) for g in rapor['uyari_gruplari']}, {
++            ('durum_bos', 'DURUM boş'): (4, [{'sayfa': 'MAKİNE', 'satirlar': '273–275, 277'}]),
++            ('durum_durumsuz', 'DURUM "MALZEME TEDARİK": iş akışı durumu atanmaz'):
++                (3, [{'sayfa': 'ELDE DİZGİ', 'satirlar': '67, 69, 72'}]),
++            ('durum_durumsuz', 'DURUM "PDGM ÖNERİ": iş akışı durumu atanmaz'):
++                (2, [{'sayfa': 'EÜM', 'satirlar': '244–245'}]),
++        })
++        self.assertEqual([(g['satirlar'], g['adet'], g['gizli']) for g in sayfa['EUM']['atlanan_gruplari']],
++                         [('10', 1, 1), ('205, 208', 2, 2), ('211', 1, 1)])
++
++        kartlar = self.kartlar()
++        self.assertEqual(set(kartlar), set(beklenen))
++        for anahtar, b in beklenen.items():
++            k = kartlar[anahtar]
++            with self.subTest(kart=anahtar):
++                for alan in ('talep_no', 'stok_no', 'toplam_adet', 'plan_baslama', 'plan_teslim',
++                             'gerceklesen_teslim', 'excel_durum', 'durum'):
++                    self.assertEqual(k[alan], b[alan], alan)
++                # Üretim türü yapısal olarak kaynak sayfadan gelir (ters görünme yok).
++                self.assertEqual(depo.dizgi_kodu(k['dizgi_tipi']), anahtar[0])
++                self.assertEqual(k['source_active'], 1)
++                self.assertEqual(k['tamamlanan_adet'], k['toplam_adet'] if k['durum'] == 'TESLİM EDİLDİ' else 0)
++        # Malzeme bayrağı: BEKLENİYOR yazımı ve MALZEME TEDARİK.
++        self.assertEqual(sorted(n for (kod, n), k in kartlar.items() if k['malzeme_bekliyor']),
++                         [13, 17, 18, 20])
++        # Diskten yeniden yüklenen durum aynı.
++        once = copy.deepcopy(depo._kartlar)
++        depo._kartlar = []
++        depo.kur()
++        self.assertEqual(depo._kartlar, once)
++
++    def test_ayni_talep_farkli_sayfada_bagimsiz(self):
++        self.yukle()
++        kartlar = self.kartlar()
++        makine, eum = kartlar[('MAKINE', 11)], kartlar[('EUM', 8)]
++        self.assertEqual(makine['talep_no'], eum['talep_no'])  # 1826751 iki sayfada da var
++        self.assertNotEqual(makine['id'], eum['id'])
++
++        def degistir(wb):
++            wb['EÜM']['W244'] = 'ÜRETİM PLANA ALINDI'
++        self.yukle(self.kopya(degistir))
++        kartlar = self.kartlar()
++        self.assertEqual(kartlar[('EUM', 8)]['durum'], 'PLANA ALINDI')
++        self.assertEqual(kartlar[('MAKINE', 11)], makine)
++
++    # --- 2-5: boş / gizli satır ve sütunlar -------------------------------
++    def test_bos_ve_gizli_bos_satirlar_atlanir(self):
++        def degistir(wb):
++            ws = wb['MAKİNE']
++            ws.insert_rows(226, 3)          # kayıtların arasına 3 boş satır
++            for sutun in 'DEGIJY':
++                ws[f'{sutun}227'] = '   '   # yalnız boşluk (formülün "" sonucu gibi)
++            ws.row_dimensions[228].hidden = True
++        sonuc = self.yukle(self.kopya(degistir))
++        makine = next(s for s in sonuc['kaynak_raporu']['sayfalar'] if s['kod'] == 'MAKINE')
++        self.assertEqual(makine['kayit'], 15)
++        self.assertEqual(sonuc['yeni'], 44)
++        self.assertEqual(makine['bos_satir'], 219 + 3)
++
++    def test_gizli_dolu_satir_normal_islenir(self):
++        def degistir(wb):
++            ws = wb['MAKİNE']
++            ws.row_dimensions[272].hidden = True          # mevcut kayıt (NO 11) gizlendi
++            for sutun, deger in zip('CDEGIJUWY', [16, 1900001, 'Gizli Sahip', 'Ahmet Düzgün', 'AD-GIZLI-0001',
++                                                  '7 ADET', datetime(2026, 9, 28), datetime(2026, 10, 2),
++                                                  'PLANA ALINDI']):
++                ws[f'{sutun}278'] = deger
++            ws.row_dimensions[278].hidden = True          # yeni kayıt gizli satırda
++        sonuc = self.yukle(self.kopya(degistir))
++        makine = next(s for s in sonuc['kaynak_raporu']['sayfalar'] if s['kod'] == 'MAKINE')
++        self.assertEqual((makine['kayit'], makine['gizli_kayit']), (16, 2))
++        k = self.kartlar()
++        self.assertEqual(k[('MAKINE', 11)]['durum'], 'PLANA ALINDI')
++        self.assertEqual((k[('MAKINE', 16)]['stok_no'], k[('MAKINE', 16)]['toplam_adet'],
++                          k[('MAKINE', 16)]['plan_baslama']), ('AD-GIZLI-0001', 7, '2026-09-28'))
++
++    def test_gizli_ve_bos_sutunlar_baslik_eslesmesini_bozmaz(self):
++        self.yukle()
++        alanlar = ('durum', 'gerceklesen_teslim', 'plan_teslim', 'plan_baslama', 'pcb', 'stok_no',
++                   'toplam_adet', 'dizgi_sorumlusu')
++        once = {a: tuple(k[x] for x in alanlar) for a, k in self.kartlar().items()}
++        gizlenecek = {'GERCEKLESEN TESLIM T', 'DURUM', 'PCB', 'MALZEME/PCB', 'KART STOK NO',
++                      'KART URETIM ADET', 'DIZGI BASLAMA T'}
++
++        def degistir(wb):
++            # Başlıksız boş sütun: sonraki bütün sütunlar bir sağa kayar (sabit indeks yok).
++            wb['MAKİNE'].insert_cols(5)
++            for ad, baslik in (('MAKİNE', 4), ('ELDE DİZGİ', 2), ('EÜM', 2)):
++                for hucre in wb[ad][baslik]:
++                    if ex._sadelestir(hucre.value) in gizlenecek:
++                        wb[ad].column_dimensions[hucre.column_letter].hidden = True
++        sonuc = self.yukle(self.kopya(degistir))
++        self.assertEqual((sonuc['yeni'], sonuc['guncellenen'], sonuc['pasife_alinan']), (0, 0, 0))
++        sonra = {a: tuple(k[x] for x in alanlar) for a, k in self.kartlar().items()}
++        self.assertEqual(sonra, once)
++
++    def test_yinelenen_teslim_sutunu_gizlilikten_bagimsiz_uretim_blogundan_okunur(self):
++        """Sipariş bloğundaki (O) ve üretim bloğundaki (W) "Planlanan Teslim T." aynı başlıkta.
++
++        Eskiden görünür olan okunuyordu: W gizlenip O gösterilirse tarihler sessizce yanlış
++        sütundan gelirdi. Artık DURUM'a yakın olan üretim sütunu okunur.
++        """
++        self.yukle(); once = copy.deepcopy(depo._kartlar)
++        for aciklama, gizlilik in [("O görünür, W gizli", {'O': False, 'W': True}),
++                                   ("ikisi de görünür", {'O': False, 'W': False}),
++                                   ("ikisi de gizli", {'O': True, 'W': True})]:
++            with self.subTest(aciklama):
++                def degistir(wb):
++                    for harf, gizli in gizlilik.items():
++                        wb['MAKİNE'].column_dimensions[harf].hidden = gizli
++                sonuc = self.yukle(self.kopya(degistir))
++                self.assertEqual((sonuc['yeni'], sonuc['guncellenen'], sonuc['degismeyen']), (0, 0, 44))
++                self.assertEqual(depo._kartlar, once)
++                self.assertEqual(self.kartlar()[('MAKINE', 11)]['plan_teslim'], '2026-09-02')  # W, O değil
++
++    def test_yinelenen_kimlik_sutunu_hala_belirsizse_hata(self):
++        def degistir(wb):   # iki görünür NO sütunu: kimlik tahmin edilmez
++            wb['MAKİNE']['V4'] = 'NO'
++        with self.assertRaisesRegex(ex.ExcelAktarimHatasi, r"'NO' için birden fazla sütun bulundu \(C, V\)"):
++            self.yukle(self.kopya(lambda wb: (degistir(wb), setattr(wb['MAKİNE'].column_dimensions['V'], 'hidden', False))))
++        self.assertEqual(depo._kartlar, [])
++
++    # --- 6, 13: eksik zorunlu alan / hatalı dosya ---------------------------
++    def test_eksik_zorunlu_alan_anlasilir_hata_ve_veri_korunur(self):
++        self.yukle()
++        once, disk = copy.deepcopy(depo._kartlar), self.disk()
++        yedekler = set(os.listdir(depo.YEDEK_KLASORU))
++
++        def degistir(wb):
++            wb['MAKİNE']['D272'] = None       # NO 11: Talep NO silindi, adet/DURUM/tarih duruyor
++            wb['EÜM']['H9'] = '  '            # NO 7: Kart Stok No boşluk
++            wb['ELDE DİZGİ']['I6'] = 'on adet'  # NO 1: adet okunamaz
++        with self.assertRaises(ex.ExcelAktarimHatasi) as hata:
++            self.yukle(self.kopya(degistir))
++        mesaj = str(hata.exception)
++        self.assertIn('3 sorun bulundu', mesaj)
++        self.assertIn("'MAKİNE' satır 272: Talep NO boş, ancak satırda kayıt verisi var", mesaj)
++        self.assertIn("'EÜM' satır 9: Kart Stok No boş", mesaj)
++        self.assertIn("'ELDE DİZGİ' sayfası, satır 6: Üretim adedi", mesaj)
++        self.assertEqual(depo._kartlar, once)
++        self.assertEqual(self.disk(), disk)
++        self.assertEqual(set(os.listdir(depo.YEDEK_KLASORU)), yedekler)  # depo'ya hiç ulaşılmadı
++
++    def test_is_kurali_hatasinda_bellek_ve_disk_geri_alinir(self):
++        self.yukle()
++        kart = self.kartlar()[('MAKINE', 9)]            # DİZGİDE, 10 adet
++        depo.kart_bitir(kart['id'], 4, 'op', 'operator', 'makine')
++        once, disk = copy.deepcopy(depo._kartlar), self.disk()
++
++        def degistir(wb):
++            wb['MAKİNE']['J264'] = '3 ADET'            # tamamlanan (4) altına indi
++            wb['EÜM']['W9'] = 'PLANA ALINDI'          # geçerli başka bir değişiklik de uygulanmamalı
++        with self.assertRaises(depo.IsKuralHatasi):
++            self.yukle(self.kopya(degistir))
++        self.assertEqual(depo._kartlar, once)
++        self.assertEqual(self.disk(), disk)
++
++    # --- 7-8: EÜM ------------------------------------------------------------
++    def test_eum_yeni_kayitlar_ve_plan_durumlari(self):
++        self.yukle()
++
++        def degistir(wb):
++            ws = wb['EÜM']
++            satirlar = [
++                (246, 10, 'PLANA ALINDI', '39. hafta (21.09 haftası)', datetime(2026, 9, 25)),
++                (247, 11, 'ÜRETİM PLANA ALINDI', '40. hafta (28.09 haftası)', None),
++                (248, 12, 'üretim  plana alındı ', '41. Hafta (5.10 haftası)', datetime(2026, 10, 9)),
++                (249, 13, 'PLANA ALİNDI', '42. hafta', datetime(2026, 10, 16)),
++            ]
++            for r, no, durum, hafta, teslim in satirlar:
++                for s, v in zip('BCDHITUW', [no, 1900000 + no, 'EÜM Sahip', f'EU-0000-{no:04d}', '4 ADET',
++                                           hafta, teslim, durum]):
++                    ws[f'{s}{r}'] = v
++            ws['W9'] = 'ÜRETİM PLANA ALINDI'           # DİZGİDE -> planlandı
++            ws['W3'] = 'PLANA ALINDI'                  # TESLİM EDİLDİ -> planlandı (tarih dolu)
++        sonuc = self.yukle(self.kopya(degistir))
++        self.assertEqual(sonuc['yeni'], 4)
++        k = self.kartlar()
++        for no, baslangic in [(10, '2026-09-21'), (11, '2026-09-28'), (12, '2026-10-05'), (13, '2026-10-12')]:
++            with self.subTest(no=no):
++                kart = k[('EUM', no)]
++                self.assertEqual((kart['dizgi_tipi'], kart['durum'], kart['tamamlanan_adet'],
++                                  kart['baslangic_adet'], kart['plan_baslama']),
++                                 ("EÜM'DE DİZGİ", 'PLANA ALINDI', 0, 0, baslangic))
++        self.assertEqual((k[('EUM', 7)]['durum'], k[('EUM', 7)]['tamamlanan_adet']), ('PLANA ALINDI', 0))
++        self.assertEqual((k[('EUM', 1)]['durum'], k[('EUM', 1)]['tamamlanan_adet']), ('PLANA ALINDI', 0))
++        # Planlanmış EÜM kartı teslim/üretimde görünmez; EÜM filtresi karışmaz.
++        mod, client = self.load_app()
++        teslim = client.get('/api/panel/teslimler?dizgi=EUM').get_json()['teslim_edilen']
++        self.assertEqual(len(teslim), 5)
++        self.assertNotIn('1465221', {t['talep_no'] for t in teslim})
++        pano = client.get('/api/veriler').get_json()
++        eum_plan = [x for x in pano['kartlar'] if x['dizgi_kod'] == 'EUM' and x['durum'] == 'PLANA ALINDI']
++        self.assertEqual(len(eum_plan), 6)
++        self.assertEqual(pano['sayac']['plana_alindi_eum'], 6)
++        self.assertEqual(pano['sayac']['dizgide_eum'], 0)
++        self.assertTrue(all(x['rozet'] != 'TESLİM EDİLDİ' and 'TESLİM' not in x['rozet'] for x in eum_plan))
++
++    # --- 9-12: güncelleme, ekleme, silme, tekrar yükleme --------------------
++    def test_tarih_ve_durum_degisikligi_mevcut_karti_gunceller(self):
++        mod, client = self.load_app()
++        self.yukle()
++        idler = {a: k['id'] for a, k in self.kartlar().items()}
++
++        def degistir(wb):
++            ws = wb['MAKİNE']
++            ws['W272'] = datetime(2026, 9, 10)          # NO 11 plan teslim
++            ws['Y272'] = 'DİZGİDE'                     # NO 11 PLANA -> DİZGİDE
++            ws['X264'] = datetime(2026, 9, 1)           # NO 9 teslim edildi
++            ws['Y264'] = 'TESLİM EDİLDİ'
++            wb['ELDE DİZGİ']['S70'] = datetime(2026, 8, 25)  # ELDE NO 19 başlangıç
++        sonuc = self.yukle(self.kopya(degistir))
++        self.assertEqual((sonuc['yeni'], sonuc['guncellenen'], sonuc['degismeyen'], sonuc['pasife_alinan']),
++                         (0, 3, 41, 0))
++        k = self.kartlar()
++        self.assertEqual({a: x['id'] for a, x in k.items()}, idler)
++        self.assertEqual((k[('MAKINE', 11)]['plan_teslim'], k[('MAKINE', 11)]['durum']), ('2026-09-10', 'DİZGİDE'))
++        self.assertEqual((k[('MAKINE', 9)]['durum'], k[('MAKINE', 9)]['gerceklesen_teslim'],
++                          k[('MAKINE', 9)]['tamamlanan_adet']), ('TESLİM EDİLDİ', '2026-09-01', 10))
++        self.assertEqual(k[('ELLE', 19)]['plan_baslama'], '2026-08-25')
++        # API ve diskten yeniden yükleme eski veriyi göstermez.
++        api = {(x['dizgi_kod'], x['sira']): x for x in client.get('/api/veriler').get_json()['kartlar']}
++        self.assertEqual((api[('MAKINE', 11)]['plan_teslim'], api[('MAKINE', 11)]['durum']),
++                         ('2026-09-10', 'DİZGİDE'))
++        self.assertEqual(api[('MAKINE', 9)]['durum'], 'TESLİM EDİLDİ')
++        depo._kartlar = []
++        depo.kur()
++        self.assertEqual(self.kartlar()[('MAKINE', 11)]['plan_teslim'], '2026-09-10')
++
++    def test_yeni_kayit_eklenir_digerleri_degismez(self):
++        self.yukle(); once = copy.deepcopy(self.kartlar())
++
++        def degistir(wb):
++            ws = wb['MAKİNE']
++            for s, v in zip('CDEGIJTUWY', [16, 1850000, 'Yeni Sahip', 'Ahmet Düzgün', 'AD-YENI-0016', '12 ADET',
++                                           '40. hafta (28.09 haftası)', datetime(2026, 9, 28),
++                                           datetime(2026, 10, 1), 'PLANA ALINDI']):
++                ws[f'{s}279'] = v
++        sonuc = self.yukle(self.kopya(degistir))
++        self.assertEqual((sonuc['yeni'], sonuc['guncellenen'], sonuc['pasife_alinan']), (1, 0, 0))
++        sonra = self.kartlar()
++        self.assertEqual({a: sonra[a] for a in once}, once)
++        self.assertEqual((sonra[('MAKINE', 16)]['durum'], sonra[('MAKINE', 16)]['toplam_adet']), ('PLANA ALINDI', 12))
++
++    def test_silinen_kayit_pasiflesir_geri_gelince_ayni_kart(self):
++        self.yukle()
++        kart = self.kartlar()[('MAKINE', 8)]
++
++        def sil(wb):
++            ws = wb['MAKİNE']
++            for hucre in ws[263]:
++                hucre.value = None
++        onizleme = self.yukle(self.kopya(sil), onizleme=True)
++        self.assertEqual(onizleme['pasife_alinan'], 1)
++        self.assertEqual(self.kartlar()[('MAKINE', 8)]['source_active'], 1)   # önizleme yazmaz
++        sonuc = self.yukle(self.kopya(sil))
++        self.assertEqual((sonuc['pasife_alinan'], sonuc['yeni']), (1, 0))
++        pasif = self.kartlar()[('MAKINE', 8)]
++        self.assertEqual((pasif['id'], pasif['source_active']), (kart['id'], 0))
++        self.assertNotIn(kart['id'], {k['id'] for k in depo.kartlari_getir()})
++        self.assertEqual(len(depo.kartlari_getir()), 34)
++        # Satır geri gelirse aynı kart geçmişiyle yeniden aktifleşir; çoğalma yok.
++        sonuc = self.yukle()
++        self.assertEqual((sonuc['yeni'], sonuc['guncellenen']), (0, 1))
++        self.assertEqual(self.kartlar()[('MAKINE', 8)]['source_active'], 1)
++        self.assertEqual(len(depo._kartlar), 44)
++
++    def test_kalinti_birakilarak_silinen_kayit_raporlanir(self):
++        self.yukle()
++
++        def degistir(wb):  # NO 11: talep/adet/tarih/durum temizlendi; NO, stok, sorumlu, hafta kaldı
++            for s in 'DFHJUWXY':
++                wb['MAKİNE'][f'{s}272'] = None
++        sonuc = self.yukle(self.kopya(degistir), onizleme=True)
++        self.assertEqual(sonuc['pasife_alinan'], 1)
++        makine = next(s for s in sonuc['kaynak_raporu']['sayfalar'] if s['kod'] == 'MAKINE')
++        atlanan = {a['satir']: a for a in makine['atlanan']}
++        self.assertIn(272, atlanan)
++        self.assertEqual(atlanan[272]['dolu'], ['C:NO', 'E:Talep Sahibi', 'G:PDGM Dizgi Sorumlusu',
++                                               'I:Kart Stok No', 'K:Birim Seviyesi Kullanım',
++                                               'L:STROM İhtiyacı', 'M:Üretim Yeri', 'N:Sipariş Tarihi',
++                                               'O:Planlanan Teslim T.', 'P:Gerçekleşen Teslim Tarihi',
++                                               'Q:Üretim Yeri', 'R:Elek Durumu', 'S:Dizgi Talep Açılma Tarihi',
++                                               'T:Planlanan Başlangıç T.'])
++
++    def test_ayni_dosya_tekrar_yukleme_degisiklik_uretmez(self):
++        self.yukle()
++        once = copy.deepcopy(depo._kartlar)
++        for yeniden_baslat in (False, True):
++            with self.subTest(yeniden_baslat=yeniden_baslat):
++                if yeniden_baslat:
++                    depo._kartlar = []
++                    depo.kur()
++                log_sayisi = len(depo._loglar)
++                onizleme = self.yukle(onizleme=True)
++                self.assertEqual(onizleme['degisiklikler'], [])
++                sonuc = self.yukle()
++                self.assertEqual((sonuc['yeni'], sonuc['guncellenen'], sonuc['degismeyen'],
++                                  sonuc['pasife_alinan']), (0, 0, 44, 0))
++                self.assertEqual(depo._kartlar, once)  # guncelleme damgası ve sürüm dahil
++                yeni_loglar = [l['islem'] for l in depo._loglar[log_sayisi:]]
++                self.assertEqual(yeni_loglar, ['EXCEL YÜKLENDİ'])
++
++    # --- Flask: önizleme + onay + API tutarlılığı --------------------------
++    def test_arayuz_onizleme_onay_ve_api(self):
++        mod, client = self.load_app()
++        with self.snapshot_yamasi(), GERCEK_EXCEL.open('rb') as f:
++            yanit = client.post('/yonetim/yukle', data={'_csrf_token': 'test-token', 'onizleme': '1',
++                                                       'dosya': (f, GERCEK_EXCEL.name)})
++        self.assertEqual(yanit.status_code, 200)
++        html = yanit.get_data(as_text=True)
++        self.assertIn('44 kayıt okundu', html)
++        self.assertIn(f'52 satır kart sayılmadı: {MAKINE_KALINTI}', html)
++        self.assertRegex(html, r'kontrol-sayi">56</span>\s*<div>\s*<strong>Kart sayılmayan satırlar')
++        self.assertRegex(html, r'<span>Yeni kart</span><strong>44</strong>')
++        self.assertIn('DURUM &#34;MALZEME TEDARİK&#34;: iş akışı durumu atanmaz', html)
++        self.assertIn('ELDE DİZGİ: satır 67, 69, 72', html)
++        self.assertIn('44 yeni kartın listesini göster', html)
++        self.assertEqual(depo._kartlar, [])                     # önizleme kayıt değiştirmez
++        with self.snapshot_yamasi():
++            yanit = client.post('/yonetim/yukle-onay', data={'_csrf_token': 'test-token'})
++        self.assertEqual(yanit.status_code, 302)
++        with client.session_transaction() as oturum:
++            mesaj = oturum['_flashes'][-1][1]
++        self.assertIn('56 satır Talep NO/Kart Stok No içermediği için kart sayılmadı', mesaj)
++        self.assertLess(len(mesaj), 1500)
++        pano = client.get('/api/veriler').get_json()
++        self.assertEqual(len(pano['kartlar']), 35)              # durumu boş 9 kart operasyonda görünmez
++        self.assertEqual((pano['sayac']['plana_alindi'], pano['sayac']['dizgide']), (3, 5))
++        teslim = client.get('/api/panel/teslimler').get_json()
++        self.assertEqual(len(teslim['teslim_edilen']), 27)
++        self.assertEqual({d: len(client.get(f'/api/panel/teslimler?dizgi={d}').get_json()['teslim_edilen'])
++                          for d in ('MAKINE', 'ELLE', 'EUM')}, {'MAKINE': 8, 'ELLE': 13, 'EUM': 6})
++        self.assertEqual(len(depo.durumu_eksik_kartlari_getir()), 9)
++        # Rapor özeti, kaynakta olmayan kartları güncel sayaçlara katmaz.
++        self.assertEqual(mod.ozet_hesapla()['genel']['toplam'], 44)
++        self.yukle(self.kopya(lambda wb: [setattr(h, 'value', None) for h in wb['MAKİNE'][272]]))
++        self.assertEqual(mod.ozet_hesapla()['genel']['plana_alindi'], 2)
++
++
++    def test_arayuz_onizleme_gruplar_ve_hata_ekrani(self):
++        mod, client = self.load_app()
++        self.yukle()
++
++        def onizle(path):
++            with self.snapshot_yamasi(), open(path, 'rb') as f:
++                return client.post('/yonetim/yukle', data={'_csrf_token': 'test-token', 'onizleme': '1',
++                                                          'dosya': (f, 'plan.xlsx')})
++
++        def degistir(wb):
++            wb['MAKİNE']['W272'] = datetime(2026, 9, 10)   # NO 11 plan teslim
++            wb['MAKİNE']['Y272'] = 'DİZGİDE'
++            for hucre in wb['MAKİNE'][263]:               # NO 8 silindi
++                hucre.value = None
++        yanit = onizle(self.kopya(degistir))
++        self.assertEqual(yanit.status_code, 200)
++        html = yanit.get_data(as_text=True)
++        self.assertIn("Excel'de artık olmayan kartlar pasifleşecek", html)
++        self.assertIn('Kart güncellenecek', html)
++        self.assertRegex(html, r'<tr class="onemli">\s*<td>Durum</td>\s*<td class="eski">PLANA ALINDI</td>'
++                               r'\s*<td class="yeni">DİZGİDE</td>')
++        self.assertRegex(html, r'<td>Plan Teslim</td>\s*<td class="eski">02.09.2026</td>\s*'
++                               r'<td class="yeni">10.09.2026</td>')
++        self.assertNotIn('Yeni kart oluşturulacak', html)
++        self.assertNotIn('Onaylamadan önce kontrol edin.', html)   # 1/44 toplu pasifleşme değil
++
++        # Sayfanın yarısı silinirse toplu pasifleşme uyarısı ve buton değişir.
++        def yarisi(wb):
++            for r in range(3, 73):
++                for hucre in wb['ELDE DİZGİ'][r]:
++                    hucre.value = None
++        html = onizle(self.kopya(yarisi)).get_data(as_text=True)
++        self.assertIn('44 aktif karttan 20 tanesi pasifleşecek', html)
++        self.assertIn('Yine de uygula', html)
++
++        # Hatalı dosya: yönetime yönlendirmek yerine sorunlar madde madde gösterilir.
++        def hatali(wb):
++            wb['MAKİNE']['D272'] = None
++            wb['EÜM']['H9'] = None
++        once = copy.deepcopy(depo._kartlar)
++        yanit = onizle(self.kopya(hatali))
++        self.assertEqual(yanit.status_code, 422)
++        html = yanit.get_data(as_text=True)
++        self.assertIn('Excel kabul edilmedi', html)
++        self.assertIn('2 SORUN', html)
++        self.assertIn('<span class="sorun-konum">MAKİNE · satır 272</span>', html)
++        self.assertIn('<span class="sorun-konum">EÜM · satır 9</span>', html)
++        self.assertEqual(depo._kartlar, once)
++
++
++class ParserBirimTests(unittest.TestCase):
++    """Satır sınıflandırma, hafta metni ve normalizasyon; geçici XLSX ile."""
++    setUp = fixtures.SyncTests.setUp
++    book = fixtures.SyncTests.book
++    upload = fixtures.SyncTests.upload
++
++    def test_hafta_metni_pazartesiye_iner(self):
++        for metin, referans, beklenen in [
++            ('23. Hafta (2.06 haftası)', '2025-06-11', '2025-06-02'),
++            ('25. Hafta (16.06 haftası )', '2025-06-23', '2025-06-16'),
++            ('34. hafta 17.08 haftası)', '2026-08-21', '2026-08-17'),
++            ('37. hafta (7.09 haftası)', None, None),       # yıl: Pazartesi+hafta tutarlılığı
++            ('1. hafta (29.12 haftası)', '2026-01-02', '2025-12-29'),
++            ('52. hafta', '2026-12-25', '2026-12-21'),
++            ('(3.06.2026 haftası)', None, '2026-06-01'),
++        ]:
++            with self.subTest(metin=metin):
++                sonuc, uyari = ex._hafta_metni_coz(metin, referans)
++                if beklenen is None:
++                    self.assertEqual(date.fromisoformat(sonuc).weekday(), 0)
++                    self.assertEqual(date.fromisoformat(sonuc).isocalendar()[1], 37)
++                    self.assertEqual((date.fromisoformat(sonuc).day, date.fromisoformat(sonuc).month), (7, 9))
++                else:
++                    self.assertEqual(sonuc, beklenen)
++                self.assertIsNone(uyari)
++        self.assertEqual(ex._hafta_metni_coz('belirsiz', '2026-01-01'), (None, None))
++        sonuc, uyari = ex._hafta_metni_coz('30. hafta (2.06 haftası)', '2025-06-11')
++        self.assertEqual(sonuc, '2025-06-02')
++        self.assertIn('uyuşmuyor', uyari)
++
++    def test_eum_hafta_metni_ve_okunamayan_metin(self):
++        basliklar = list(fixtures.HEADERS); basliklar[8] = 'Planlanan Başlangıç T.'
++        with patch.object(fixtures, 'HEADERS', basliklar):
++            sonuc = self.upload({'MAKİNE': [], 'EÜM': [
++                row(1, start=None, end='2025-06-11', planned='23. Hafta (2.06 haftası)'),
++                row(2, start=None, end=None, planned='belirsiz'),
++                row(3, start='2026-09-16', end='2026-09-20', planned='38. hafta (14.09 haftası)'),
++            ]})
++        k = {x['sira']: x for x in depo._kartlar}
++        self.assertEqual((k[1]['plan_baslama'], k[2]['plan_baslama'], k[3]['plan_baslama']),
++                         ('2025-06-02', None, '2026-09-16'))  # açık Dizgi Başlama tarihi önceliklidir
++        self.assertTrue(any('belirsiz' in u for u in sonuc['kaynak_raporu']['uyarilar']))
++
++    def test_durum_normalizasyonu(self):
++        for ham, beklenen in [('PLANA ALINDI', 'PLANA ALINDI'), ('plana alındı', 'PLANA ALINDI'),
++                              (' Üretim  Plana Alındı ', 'PLANA ALINDI'), ('ÜRETİM PLANA ALINDI', 'PLANA ALINDI'),
++                              ('PLANA ALİNDI', 'PLANA ALINDI'), ('Dizgide', 'DİZGİDE'),
++                              ('DİZGİDE VE MALZEME BEKLENİYOR', 'DİZGİDE'), ('ÜRETİM DEVAM EDİYOR', 'DİZGİDE'),
++                              ('teslim edildi', 'TESLİM EDİLDİ'), ('PDGM ÖNERİ', None), ('MALZEME TEDARİK', None)]:
++            with self.subTest(ham=ham):
++                self.assertEqual(ex.durum_coz(ham)[0], beklenen)
++        self.assertTrue(ex.malzeme_bekliyor_mu('DİZGİDE VE MALZEME BEKLENİYOR'))
++
++    def test_kalinti_satir_atlanir_kanitli_satir_reddedilir(self):
++        kalinti = [None, None, 'STK-X', None, None, None, None, None, None, 'Sahip', 'VAR']
++        numarali = [7, None, 'STK-Y', None, None, None, None, None, None, None, None]
++        sonuc = self.upload({'MAKİNE': [row(1), kalinti, numarali]})
++        makine = sonuc['kaynak_raporu']['sayfalar'][0]
++        self.assertEqual((makine['kayit'], [a['satir'] for a in makine['atlanan']]), (1, [3, 4]))
++        once = copy.deepcopy(depo._kartlar)
++        for alan, deger in [(3, '5 ADET'), (7, 'DİZGİDE'), (5, '2026-09-20'), (6, '2026-09-21')]:
++            with self.subTest(alan=fixtures.HEADERS[alan]):
++                yarim = [None, None, 'STK-Z', None, None, None, None, None, None, None, None]
++                yarim[alan] = deger
++                with self.assertRaisesRegex(ex.ExcelAktarimHatasi, 'Talep NO boş, ancak satırda kayıt verisi var'):
++                    self.upload({'MAKİNE': [row(1), yarim]})
++                self.assertEqual(depo._kartlar, once)
++
++    def test_excel_hata_degerleri(self):
++        # Metin ve hata değerleri ' önekiyle yazılır: Excel onları yeniden yorumlamaz.
++        self.assertEqual(ex._com_degerleri(((1, -2146826246), ('x', -2146826281), ('', None))),
++                         ((1, "'#N/A"), ("'x", "'#DIV/0!"), ('', None)))
++        self.assertEqual(ex._com_degerleri(-2146826265), (("'#REF!",),))
++        self.assertEqual(ex._com_degerleri(46147.0), ((46147.0,),))
++        # Kalıntı satırdaki hata değeri kayıt kanıtı değildir; kayıttaki hata reddedilir.
++        sonuc = self.upload({'MAKİNE': [row(1), [None, '#N/A', 'STK', None, None, None, None, None, None, None, None]]})
++        self.assertEqual(len(sonuc['kaynak_raporu']['sayfalar'][0]['atlanan']), 1)
++        with self.assertRaisesRegex(ex.ExcelAktarimHatasi, 'Excel hata değeri'):
++            self.upload({'MAKİNE': [row(1, end='#N/A')]})
++
++    def test_gizli_bos_sutun_ve_gizli_satir_sentetik(self):
++        path = self.book({'MAKİNE': [row(1, status='DİZGİDE'), row(2), [None] * 11, row(3)]})
++        wb = openpyxl.load_workbook(path)
++        ws = wb['MAKİNE']
++        ws.insert_cols(4)                         # başlıksız boş sütun
++        ws.column_dimensions['I'].hidden = True   # DURUM (kaymadan sonra I)
++        ws.row_dimensions[3].hidden = True        # kayıt satırı gizli
++        ws.row_dimensions[4].hidden = True        # boş satır gizli
++        wb.save(path); wb.close()
++
++        def snapshot(_):
++            hedef = self.root / 'snapshot.xlsx'; shutil.copy2(path, hedef); return str(hedef)
++        with patch.object(ex, 'excel_deger_snapshot_olustur', snapshot):
++            sonuc = ex.excelden_aktar(str(path), 'tester')
++        sayfa = sonuc['kaynak_raporu']['sayfalar'][0]
++        self.assertEqual((sayfa['kayit'], sayfa['gizli_kayit'], sayfa['bos_satir'], sayfa['atlanan']),
++                         (3, 1, 1, []))
++        self.assertEqual({k['sira']: k['durum'] for k in depo._kartlar},
++                         {1: 'DİZGİDE', 2: 'PLANA ALINDI', 3: 'PLANA ALINDI'})
++
++
++@unittest.skipUnless(os.environ.get('PDGM_TEST_EXCEL_COM') == '1' and GERCEK_EXCEL.exists(),
++                     'Set PDGM_TEST_EXCEL_COM=1 for real Excel COM')
++class GercekExcelCOMTests(unittest.TestCase):
++    """Aynı gerçek dosya senaryoları, snapshot'ı gerçek Microsoft Excel üretirken."""
++    setUp = fixtures.SyncTests.setUp
++    kopya = GercekExcelTests.kopya
++    kartlar = GercekExcelTests.kartlar
++    disk = GercekExcelTests.disk
++
++    def yukle(self, path=GERCEK_EXCEL, **kw):
++        return ex.excelden_aktar(str(path), 'tester', **kw)
++
++    def test_com_orijinal_degisiklik_ve_tekrar_yukleme(self):
++        beklenen = referans_kayitlar(GERCEK_EXCEL)
++        sonuc = self.yukle()
++        rapor = {s['kod']: s for s in sonuc['kaynak_raporu']['sayfalar']}
++        self.assertEqual({k: s['kayit'] for k, s in rapor.items()}, {'MAKINE': 15, 'ELLE': 20, 'EUM': 9})
++        self.assertEqual(rapor['MAKINE']['atlanan_araliklar'], MAKINE_KALINTI)
++        self.assertTrue(rapor['MAKINE']['atlanan'][0]['gizli'])   # COM gizli satır bilgisini taşır
++        k = self.kartlar()
++        for anahtar, b in beklenen.items():
++            for alan in ('talep_no', 'stok_no', 'toplam_adet', 'plan_baslama', 'plan_teslim',
++                         'gerceklesen_teslim', 'durum'):
++                self.assertEqual(k[anahtar][alan], b[alan], (anahtar, alan))
++        once = copy.deepcopy(depo._kartlar)
++        self.assertEqual(self.yukle()['degismeyen'], 44)
++        self.assertEqual(depo._kartlar, once)
++
++        def degistir(wb):
++            wb['MAKİNE']['W272'] = datetime(2026, 9, 10)
++            wb['MAKİNE']['Y272'] = 'DİZGİDE'
++            wb['MAKİNE'].column_dimensions['Y'].hidden = True     # DURUM sütunu gizli
++            for hucre in wb['MAKİNE'][263]:
++                hucre.value = None                                 # NO 8 silindi
++            ws = wb['EÜM']
++            for s, v in zip('BCDHITUW', [10, 1900010, 'EÜM Sahip', 'EU-0000-0010', '4 ADET',
++                                        '39. hafta (21.09 haftası)', datetime(2026, 9, 25), 'ÜRETİM PLANA ALINDI']):
++                ws[f'{s}246'] = v
++        sonuc = self.yukle(self.kopya(degistir))
++        self.assertEqual((sonuc['yeni'], sonuc['guncellenen'], sonuc['pasife_alinan']), (1, 1, 1))
++        k = self.kartlar()
++        self.assertEqual((k[('MAKINE', 11)]['plan_teslim'], k[('MAKINE', 11)]['durum']), ('2026-09-10', 'DİZGİDE'))
++        self.assertEqual(k[('MAKINE', 8)]['source_active'], 0)
++        self.assertEqual((k[('EUM', 10)]['durum'], k[('EUM', 10)]['plan_baslama']), ('PLANA ALINDI', '2026-09-21'))
++
++    def test_com_formul_hata_degeri_kayitta_reddedilir(self):
++        def degistir(wb):
++            wb['MAKİNE']['J272'] = '=NA()'
++        with self.assertRaisesRegex(ex.ExcelAktarimHatasi, "'MAKİNE' satır 272: Excel hata değeri"):
++            self.yukle(self.kopya(degistir))
++        self.assertEqual(depo._kartlar, [])
++
++
++if __name__ == '__main__':
++    unittest.main()
+--- before/tests/test_onceki_hatalar.py
++++ after/tests/test_onceki_hatalar.py
+@@ -0,0 +1,220 @@
++"""Sahada yaşanan iki hatanın güncel kodda tekrar etmediğini ekran/API düzeyinde doğrular.
++
++1.1 Aynı talebin 2 adedi elle, 5 adedi makinede: türler/durumlar ters, tarihler
++    yanlış, Excel'de teslim edilmiş kart arayüzde "PLANDA".
++1.2 Aynı Talep NO + Kart Stok No birden fazla satırda: her satır ayrı kart olmalı.
++Geçici klasörde çalışır; üretim verisine dokunmaz.
++"""
++import re
++import unittest
++
++from flask import template_rendered
++
++import depo
++import excel_araclari as ex
++from tests import test_excel_sync as fixtures, test_ui as ui
++from tests.test_excel_sync import row
++
++TALEP, STOK = '1900700', 'AD-7000-0001'
++
++
++def makine(no=1, **kw):
++    ayar = dict(qty=5, status='DİZGİDE', start='2026-09-21', end='2099-12-31', request=TALEP, stock=STOK)
++    ayar.update(kw)
++    return row(no, **ayar)
++
++
++def elle(no=1, **kw):
++    ayar = dict(qty=2, status='TESLİM EDİLDİ', start='2026-09-14', end='2026-09-18', actual='2026-09-17',
++                request=TALEP, stock=STOK)
++    ayar.update(kw)
++    return row(no, **ayar)
++
++
++class OncekiHatalarTests(unittest.TestCase):
++    setUp = fixtures.SyncTests.setUp
++    book = fixtures.SyncTests.book
++    upload = fixtures.SyncTests.upload
++    load_app = ui.UITests.load_app
++
++    def kart(self, kod, no):
++        return next(k for k in depo._kartlar if k['source_sheet'] == kod and k['source_row_id'] == f'NO:{no}')
++
++    def ekran(self, client):
++        """Pano API'si, monitör bağlamı ve teslim listesi: kullanıcının gördüğü veri."""
++        baglam = []
++        def yakala(sender, template, context, **extra): baglam.append(context)
++        with template_rendered.connected_to(yakala, client.application):
++            client.get('/monitor')
++        monitor = {k['id']: k['rozet'] for k in baglam[-1]['dizgide'] + baglam[-1]['plana_alindi']}
++        pano = {k['id']: k for k in client.get('/api/veriler').get_json()['kartlar']}
++        teslim = {t['stok_no'] + '/' + t['dizgi_kod']: t
++                  for t in client.get('/api/panel/teslimler').get_json()['teslim_edilen']}
++        return pano, monitor, teslim
++
++    # --- 1.1 -----------------------------------------------------------------
++    def test_ayni_talep_elle_bitti_makine_devam_ediyor(self):
++        _, client = self.load_app()
++        self.upload({'MAKİNE': [makine(1), row(2, stock='DIGER')], 'ELDE DİZGİ': [elle(1)]})
++        m, e = self.kart('MAKINE', 1), self.kart('ELLE', 1)
++        self.assertNotEqual(m['id'], e['id'])
++        self.assertEqual((m['dizgi_tipi'], m['toplam_adet'], m['durum'], m['plan_baslama'], m['plan_teslim'],
++                          m['gerceklesen_teslim']),
++                         ('MAKİNE', 5, 'DİZGİDE', '2026-09-21', '2099-12-31', None))
++        self.assertEqual((e['dizgi_tipi'], e['toplam_adet'], e['durum'], e['tamamlanan_adet'], e['plan_baslama'],
++                          e['plan_teslim'], e['gerceklesen_teslim']),
++                         ('ELLE DİZGİ', 2, 'TESLİM EDİLDİ', 2, '2026-09-14', '2026-09-18', '2026-09-17'))
++
++        pano, monitor, teslim = self.ekran(client)
++        self.assertEqual((pano[m['id']]['dizgi_kod'], pano[m['id']]['durum']), ('MAKINE', 'DİZGİDE'))
++        self.assertEqual((pano[e['id']]['dizgi_kod'], pano[e['id']]['durum']), ('ELLE', 'TESLİM EDİLDİ'))
++        self.assertIn(m['id'], monitor)                 # makine işi monitörde
++        self.assertNotIn(e['id'], monitor)              # bitmiş elle iş monitörde değil
++        self.assertEqual(monitor[m['id']], 'PLANDA')
++        self.assertEqual(set(teslim), {f'{STOK}/ELLE'})  # teslim listesinde yalnız elle kısmı
++        self.assertEqual((teslim[f'{STOK}/ELLE']['toplam_adet'], teslim[f'{STOK}/ELLE']['teslim']),
++                         (2, '17.09.2026'))
++
++    def test_eski_hata_yolu_makine_satiri_silinince_elle_kimlik_calmaz(self):
++        """Eski kodda: MAKİNE satırı silinince ELDE satırı MAKİNE kartının ID'sini alıyordu."""
++        self.upload({'MAKİNE': [makine(1), row(2, stock='DIGER')], 'ELDE DİZGİ': [elle(1)]})
++        m_id, e_id = self.kart('MAKINE', 1)['id'], self.kart('ELLE', 1)['id']
++        # Sıra değişikliği + araya yeni satır + ELDE tarih değişikliği.
++        self.upload({'MAKİNE': [row(3, stock='YENI'), row(2, stock='DIGER'), makine(1, end='2099-12-30')],
++                     'ELDE DİZGİ': [elle(1, actual='2026-09-19')]})
++        self.assertEqual((self.kart('MAKINE', 1)['id'], self.kart('ELLE', 1)['id']), (m_id, e_id))
++        self.assertEqual(self.kart('MAKINE', 1)['plan_teslim'], '2099-12-30')
++        self.assertEqual(self.kart('ELLE', 1)['gerceklesen_teslim'], '2026-09-19')
++        # Makine satırı silinir: yalnız makine kartı pasifleşir, elle kartı aynen kalır.
++        self.upload({'MAKİNE': [row(2, stock='DIGER')], 'ELDE DİZGİ': [elle(1, actual='2026-09-19')]})
++        self.assertEqual(self.kart('MAKINE', 1)['source_active'], 0)
++        elle_kart = self.kart('ELLE', 1)
++        self.assertEqual((elle_kart['id'], elle_kart['dizgi_tipi'], elle_kart['toplam_adet'], elle_kart['durum'],
++                          elle_kart['source_active']), (e_id, 'ELLE DİZGİ', 2, 'TESLİM EDİLDİ', 1))
++        self.assertEqual(len([k for k in depo._kartlar if k['talep_no'] == TALEP]), 2)
++        # Satır geri gelince aynı makine kartı döner; çoğalma yok.
++        self.upload({'MAKİNE': [makine(1), row(2, stock='DIGER')], 'ELDE DİZGİ': [elle(1)]})
++        self.assertEqual((self.kart('MAKINE', 1)['id'], self.kart('MAKINE', 1)['source_active']), (m_id, 1))
++        self.assertEqual(len([k for k in depo._kartlar if k['talep_no'] == TALEP]), 2)
++
++    def test_excelde_teslim_edilen_kart_planda_gorunmez(self):
++        _, client = self.load_app()
++        self.upload({'MAKİNE': [makine(1)]})
++        m = self.kart('MAKINE', 1)
++        depo.kart_bitir(m['id'], 2, 'op', 'operator', 'makine')       # uygulamada kısmi üretim 2/5
++        for durum, tarih in [('TESLİM EDİLDİ', None), ('Teslim Edildi ', '2026-09-24')]:
++            with self.subTest(durum=durum, tarih=tarih):
++                self.upload({'MAKİNE': [makine(1, status=durum, actual=tarih)]})
++                pano, monitor, teslim = self.ekran(client)
++                self.assertEqual((pano[m['id']]['durum'], pano[m['id']]['tamamlanan_adet']), ('TESLİM EDİLDİ', 5))
++                self.assertNotIn(m['id'], monitor)                     # "PLANDA" rozetiyle görünmez
++                self.assertIn(f'{STOK}/MAKINE', teslim)
++                self.assertEqual(teslim[f'{STOK}/MAKINE']['teslim'], '24.09.2026' if tarih else '—')
++
++    # --- 1.2 -----------------------------------------------------------------
++    def test_ayni_talep_ve_stok_birden_fazla_satir_ayri_kart(self):
++        partiler = [makine(1, qty=3, status='TESLİM EDİLDİ', end='2026-09-10', actual='2026-09-10', start='2026-09-01'),
++                    makine(2, qty=4, status='DİZGİDE', start='2026-09-21', end='2099-12-31'),
++                    makine(3, qty=5, status='PLANA ALINDI', start='2099-10-01', end='2099-10-05')]
++        self.upload({'MAKİNE': partiler, 'EÜM': [makine(1, qty=6, status='ÜRETİM PLANA ALINDI', start=None,
++                                                         end='2099-10-09', planned='2099-10-06')]})
++        kartlar = {(k['source_sheet'], k['source_row_id']): k for k in depo._kartlar}
++        self.assertEqual(len(kartlar), 4)
++        self.assertEqual({a: (k['toplam_adet'], k['durum']) for a, k in kartlar.items()}, {
++            ('MAKINE', 'NO:1'): (3, 'TESLİM EDİLDİ'), ('MAKINE', 'NO:2'): (4, 'DİZGİDE'),
++            ('MAKINE', 'NO:3'): (5, 'PLANA ALINDI'), ('EUM', 'NO:1'): (6, 'PLANA ALINDI')})
++        idler = {a: k['id'] for a, k in kartlar.items()}
++        # Satırlar yer değiştirir, ortadakinin tarihi değişir, ilki silinir: yalnız ilgili kart etkilenir.
++        yeni = [makine(3, qty=5, status='PLANA ALINDI', start='2099-10-01', end='2099-10-05'),
++                makine(2, qty=4, status='DİZGİDE', start='2026-09-22', end='2099-12-30')]
++        self.upload({'MAKİNE': yeni, 'EÜM': [makine(1, qty=6, status='ÜRETİM PLANA ALINDI', start=None,
++                                                    end='2099-10-09', planned='2099-10-06')]})
++        kartlar = {(k['source_sheet'], k['source_row_id']): k for k in depo._kartlar}
++        self.assertEqual({a: k['id'] for a, k in kartlar.items()}, idler)
++        self.assertEqual((kartlar[('MAKINE', 'NO:2')]['plan_baslama'], kartlar[('MAKINE', 'NO:2')]['plan_teslim']),
++                         ('2026-09-22', '2099-12-30'))
++        self.assertEqual((kartlar[('MAKINE', 'NO:3')]['plan_teslim'], kartlar[('MAKINE', 'NO:3')]['toplam_adet']),
++                         ('2099-10-05', 5))
++        self.assertEqual(kartlar[('MAKINE', 'NO:1')]['source_active'], 0)
++        self.assertEqual(sum(k['source_active'] for k in kartlar.values()), 3)
++
++
++    # --- Aynı belirtileri hâlâ üretebilen yollar (26.09.2026 düzeltmesi) ------------
++    def test_no_baska_talebe_verilince_eski_kart_ayrilir(self):
++        """Eskiden: NO 7 yeni talebe verilince yeni talep TESLİM EDİLDİ ve eski notla görünüyordu."""
++        _, client = self.load_app()
++        self.upload({'MAKİNE': [row(7, qty=5, status='TESLİM EDİLDİ', actual='2026-09-10',
++                                   request='1111111', stock='AD-ESKI')]})
++        eski = self.kart('MAKINE', 7)
++        depo.kart_not_guncelle(eski['id'], 'Eski talebin notu', 'op', 'admin')
++        yeni_satir = row(7, qty=5, status=None, start='2099-10-01', end='2099-10-05',
++                         request='2222222', stock='AD-YENI')
++
++        with self.snapshot_ile() as yukle:
++            html = yukle(client, {'MAKİNE': [yeni_satir]})
++        self.assertIn("NO'su başka talebe verilmiş kartlar ayrılacak", html)
++        self.assertIn('2222222 · AD-YENI', html)
++
++        sonuc = self.upload({'MAKİNE': [yeni_satir]})
++        self.assertEqual((sonuc['ayrilan'], sonuc['yeni'], sonuc['guncellenen']), (1, 1, 0))
++        yeni = self.kart('MAKINE', 7)
++        self.assertNotEqual(yeni['id'], eski['id'])
++        self.assertEqual((yeni['talep_no'], yeni['durum'], yeni['tamamlanan_adet'], yeni['aciklama'], yeni['operator']),
++                         ('2222222', None, 0, None, None))
++        ayrilan = depo.kart_getir(eski['id'])
++        self.assertEqual((ayrilan['talep_no'], ayrilan['durum'], ayrilan['source_active'], ayrilan['source_row_id']),
++                         ('1111111', 'TESLİM EDİLDİ', 0, f"NO:7~{eski['id']}"))
++        self.assertIn('Eski talebin notu', ayrilan['aciklama'])
++        self.assertNotIn(eski['id'], {k['id'] for k in depo.kartlari_getir()})   # operasyon ekranında değil
++        # Aynı dosya tekrar: yeni ayrılma olmaz; diskten yeniden yükleme de tutarlı.
++        self.assertEqual(self.upload({'MAKİNE': [yeni_satir]})['ayrilan'], 0)
++        once = [dict(k) for k in depo._kartlar]
++        depo._kartlar = []
++        depo.kur()
++        self.assertEqual([(k['id'], k['source_key'], k['source_active']) for k in depo._kartlar],
++                         [(k['id'], k['source_key'], k['source_active']) for k in once])
++
++    def test_ayni_no_yalniz_stok_degisirse_kart_yerinde_guncellenir(self):
++        self.upload({'MAKİNE': [makine(1)]})
++        kart_id = self.kart('MAKINE', 1)['id']
++        sonuc = self.upload({'MAKİNE': [makine(1, stock='AD-7000-0099')]})
++        self.assertEqual((sonuc['ayrilan'], sonuc['guncellenen']), (0, 1))
++        self.assertEqual((self.kart('MAKINE', 1)['id'], self.kart('MAKINE', 1)['stok_no']), (kart_id, 'AD-7000-0099'))
++
++    def test_taninmayan_durum_importu_durdurur(self):
++        self.upload({'MAKİNE': [makine(1)]})
++        once = [dict(k) for k in depo._kartlar]
++        for durum in ['TESLİM EDİLDİ (KISMİ)', 'TESLIM', 'Bitti']:
++            with self.subTest(durum=durum):
++                with self.assertRaisesRegex(ex.ExcelAktarimHatasi, rf"satır 2: DURUM '{re.escape(durum)}' tanınmıyor"):
++                    self.upload({'MAKİNE': [makine(1, status=durum)]})
++                self.assertEqual(depo._kartlar, once)
++        # Bilinen yazımlar ve bilerek durumsuz bırakılanlar kabul edilir.
++        for durum, beklenen in [('teslim edildi', 'TESLİM EDİLDİ'), ('MALZEME TEDARİK', 'TESLİM EDİLDİ'),
++                                ('Üretim Plana Alındı', 'PLANA ALINDI'), ('PDGM ÖNERİ', 'PLANA ALINDI')]:
++            with self.subTest(durum=durum):
++                self.upload({'MAKİNE': [makine(1, status=durum)]})
++                self.assertEqual(self.kart('MAKINE', 1)['durum'], beklenen)
++
++    # --- yardımcı ---
++    def snapshot_ile(self):
++        import contextlib, shutil
++        from unittest.mock import patch
++
++        @contextlib.contextmanager
++        def baglam():
++            def onizle(client, sayfalar):
++                yol = self.book(sayfalar)
++                def snapshot(kaynak):
++                    hedef = self.root / 'onizleme.xlsx'; shutil.copy2(kaynak, hedef); return str(hedef)
++                with patch.object(ex, 'excel_deger_snapshot_olustur', snapshot), open(yol, 'rb') as f:
++                    yanit = client.post('/yonetim/yukle', data={'_csrf_token': 'test-token', 'onizleme': '1',
++                                                               'dosya': (f, 'plan.xlsx')})
++                self.assertEqual(yanit.status_code, 200)
++                return yanit.get_data(as_text=True)
++            yield onizle
++        return baglam()
++
++
++if __name__ == '__main__':
++    unittest.main()

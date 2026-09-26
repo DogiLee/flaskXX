@@ -1,0 +1,47 @@
+test_real_snapshot_hidden_identity_1904_and_reupload (test_excel_com.ExcelCOMTests.test_real_snapshot_hidden_identity_1904_and_reupload) ... skipped 'Set PDGM_TEST_EXCEL_COM=1 for real Excel COM'
+test_1904_numeric_dates (test_excel_sync.SyncTests.test_1904_numeric_dates) ... ok
+test_actual_date_clear_and_change (test_excel_sync.SyncTests.test_actual_date_clear_and_change) ... ok
+test_admin_note_edit_does_not_invent_imported_event_dates (test_excel_sync.SyncTests.test_admin_note_edit_does_not_invent_imported_event_dates) ... ok
+test_ambiguous_legacy_duplicate_rejected_atomically (test_excel_sync.SyncTests.test_ambiguous_legacy_duplicate_rejected_atomically) ... ok
+test_backups_do_not_overwrite_within_same_second (test_excel_sync.SyncTests.test_backups_do_not_overwrite_within_same_second) ... ok
+test_blank_or_invalid_status_preserves_manual_progress_notes (test_excel_sync.SyncTests.test_blank_or_invalid_status_preserves_manual_progress_notes) ... ok
+test_blank_status_cleared_actual_date_not_replaced_by_old_timestamp (test_excel_sync.SyncTests.test_blank_status_cleared_actual_date_not_replaced_by_old_timestamp) ... ok
+test_concurrent_commits_keep_each_snapshot_whole (test_excel_sync.SyncTests.test_concurrent_commits_keep_each_snapshot_whole) ... ok
+test_delete_only_one_duplicate_and_disallow_operation (test_excel_sync.SyncTests.test_delete_only_one_duplicate_and_disallow_operation) ... ok
+test_direct_import_rejects_duplicate_source_key (test_excel_sync.SyncTests.test_direct_import_rejects_duplicate_source_key) ... ok
+test_duplicate_date_change_keeps_identity (test_excel_sync.SyncTests.test_duplicate_date_change_keeps_identity) ... ok
+test_eum_existing_planned_start_header (test_excel_sync.SyncTests.test_eum_existing_planned_start_header) ... ok
+test_eum_planned_date_monday (test_excel_sync.SyncTests.test_eum_planned_date_monday) ... ok
+test_explicit_row_id_without_no_survives_reorder (test_excel_sync.SyncTests.test_explicit_row_id_without_no_survives_reorder) ... ok
+test_fresh_python_process_reads_same_persisted_cards (test_excel_sync.SyncTests.test_fresh_python_process_reads_same_persisted_cards) ... ok
+test_inactive_notes_are_admin_only (test_excel_sync.SyncTests.test_inactive_notes_are_admin_only) ... ok
+test_invalid_date_aborts_all_rows (test_excel_sync.SyncTests.test_invalid_date_aborts_all_rows) ... ok
+test_legacy_migration_preserves_ids_notes_and_backup (test_excel_sync.SyncTests.test_legacy_migration_preserves_ids_notes_and_backup) ... ok
+test_legacy_unique_without_no_migrates (test_excel_sync.SyncTests.test_legacy_unique_without_no_migrates) ... ok
+test_lossy_legacy_no_rejected_instead_of_losing_history (test_excel_sync.SyncTests.test_lossy_legacy_no_rejected_instead_of_losing_history) ... ok
+test_machine_hand_and_eum_same_no_independent (test_excel_sync.SyncTests.test_machine_hand_and_eum_same_no_independent) ... ok
+test_malformed_populated_row_is_not_a_deletion (test_excel_sync.SyncTests.test_malformed_populated_row_is_not_a_deletion) ... ok
+test_manual_card_not_hijacked (test_excel_sync.SyncTests.test_manual_card_not_hijacked) ... ok
+test_manual_partial_quantity_conflict_rolls_back (test_excel_sync.SyncTests.test_manual_partial_quantity_conflict_rolls_back) ... ok
+test_manual_workflow_still_records_real_events (test_excel_sync.SyncTests.test_manual_workflow_still_records_real_events) ... ok
+test_missing_or_duplicate_no_rejects_without_changes (test_excel_sync.SyncTests.test_missing_or_duplicate_no_rejects_without_changes) ... ok
+test_plan_fields_clear_without_creating_new_card (test_excel_sync.SyncTests.test_plan_fields_clear_without_creating_new_card) ... ok
+test_replace_failure_rolls_back_memory_and_disk (test_excel_sync.SyncTests.test_replace_failure_rolls_back_memory_and_disk) ... ok
+test_restart_preserves_source_identity_and_deletion (test_excel_sync.SyncTests.test_restart_preserves_source_identity_and_deletion) ... ok
+test_same_upload_idempotent (test_excel_sync.SyncTests.test_same_upload_idempotent) ... ok
+test_start_date_change_keeps_identity (test_excel_sync.SyncTests.test_start_date_change_keeps_identity) ... ok
+test_status_sequence_including_delivered_without_date (test_excel_sync.SyncTests.test_status_sequence_including_delivered_without_date) ... ok
+test_three_rows_reorder_insert_delete (test_excel_sync.SyncTests.test_three_rows_reorder_insert_delete) ... ok
+test_timezone_dates_keep_source_calendar_day (test_excel_sync.SyncTests.test_timezone_dates_keep_source_calendar_day) ... ok
+test_valid_empty_source_deactivates_all (test_excel_sync.SyncTests.test_valid_empty_source_deactivates_all) ... ok
+test_valid_status_updates_quantity_but_keeps_notes_and_hidden (test_excel_sync.SyncTests.test_valid_status_updates_quantity_but_keeps_notes_and_hidden) ... ok
+test_monitor_dataset_and_badge_are_local (test_ui.UITests.test_monitor_dataset_and_badge_are_local) ... ok
+test_panel_delivery_api_excludes_deleted_source_rows (test_ui.UITests.test_panel_delivery_api_excludes_deleted_source_rows) ... ok
+test_upload_route_updates_api_and_persistence (test_ui.UITests.test_upload_route_updates_api_and_persistence) ... [2026-09-20 11:54:38,548] INFO in app_test: Excel import OK: Excel aktarıldı · 1 satır · 1 yeni · 0 güncellendi · 0 workflow korundu. · Yedek: 20260920_115438_import_oncesi_f6ae96e0
+[2026-09-20 11:54:38,634] INFO in app_test: Excel import OK: Excel aktarıldı · 1 satır · 0 yeni · 1 güncellendi · 0 workflow korundu. · 1 kartın durumu Excel'den güncellendi. · 1 veri uyarısı var (boş/geçersiz DURUM, eksik teslim tarihi vb.); bu kartlar Yönetim ekranında kontrol edilebilir. · Yedek: 20260920_115438_import_oncesi_dce062bd
+ok
+
+----------------------------------------------------------------------
+Ran 40 tests in 9.283s
+
+OK (skipped=1)

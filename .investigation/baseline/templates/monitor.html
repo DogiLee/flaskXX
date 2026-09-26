@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+
+{% block title %}Monitör · PDGM İş Takip{% endblock %}
+{% block body_class %}monitor-body{% endblock %}
+
+{% block head %}
+<style>
+.monitor-kart.monitor-gizli { display: none !important; }
+
+.monitor-kart {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
+    overflow: hidden;
+}
+
+.monitor-kart-govde {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.monitor-tarihler {
+    flex: 0 0 auto !important;
+    min-height: 52px !important;
+    margin-top: 8px !important;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+    padding: 8px 10px !important;
+    border-radius: 10px !important;
+    border: 1px solid #d7e1e6 !important;
+    background: #f3f7f9 !important;
+}
+
+.monitor-tarih-etiket {
+    color: #6a7a83 !important;
+    font-size: 10px !important;
+    font-weight: 700 !important;
+    text-transform: uppercase !important;
+    letter-spacing: .35px !important;
+    line-height: 1.2 !important;
+}
+
+.monitor-tarih-deger {
+    color: #16303a !important;
+    font-size: 15px !important;
+    font-weight: 800 !important;
+    line-height: 1.25 !important;
+    white-space: nowrap !important;
+}
+
+@media (max-height: 900px) {
+    .monitor-liste {
+        grid-template-rows: 1fr 1fr !important;
+    }
+    .monitor-tarih-deger { font-size: 14px !important; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="monitor-sayfa">
+
+    <section class="monitor-ust">
+        <div>
+            <p class="ust-etiket">ATÖLYE CANLI GÖRÜNÜMÜ</p>
+            <h1>Üretim Monitörü</h1>
+            <p class="monitor-aciklama">Aktif üretim ve üretim sırası.</p>
+        </div>
+        <div class="monitor-zaman">
+            <span id="monitor-saat">{{ guncelleme }}</span>
+            <small>{{ bugun }} · Son veri yenileme {{ guncelleme }}</small>
+        </div>
+    </section>
+
+    <section class="monitor-grid">
+
+        <article class="monitor-bolum monitor-dizgide">
+            <div class="monitor-bolum-baslik">
+                <div>
+                    <p class="ust-etiket">AKTİF ÜRETİM</p>
+                    <h2>DİZGİDE</h2>
+                </div>
+                <span class="sayi-rozet">{{ dizgide|length }}</span>
+            </div>
+
+            {% if dizgide %}
+            <div class="monitor-liste" data-monitor-grup="dizgide">
+                {% for k in dizgide %}
+                <article class="monitor-kart {{ k.renk }}" data-monitor-kart>
+                    <div class="monitor-kart-govde">
+                        <div class="monitor-kart-ust">
+                            <div class="monitor-talep">
+                                <span>TALEP</span>
+                                <strong>{{ k.talep_no or "—" }}</strong>
+                            </div>
+                            <span class="durum-rozet {{ k.renk }}">{{ k.rozet }}</span>
+                        </div>
+                        {% if k.dizgi_kod != 'MAKINE' or k.malzeme_bekliyor %}
+                        <div class="monitor-ek-rozetler">
+                            {% if k.dizgi_kod == 'ELLE' %}<span class="durum-rozet elle">Elle Dizgi</span>{% endif %}
+                            {% if k.dizgi_kod == 'EUM' %}<span class="durum-rozet eum">EÜM'de Dizgi</span>{% endif %}
+                            {% if k.malzeme_bekliyor %}<span class="durum-rozet uyari">Malzeme Bekliyor</span>{% endif %}
+                        </div>
+                        {% endif %}
+                        <h3>{{ k.stok_no or "Stok no yok" }}</h3>
+                        <p class="monitor-sahip">{{ k.talep_sahibi or "—" }}</p>
+                        <div class="monitor-adet-satir">
+                            <strong>{{ k.tamamlanan_adet }}/{{ k.toplam_adet }}</strong>
+                            <span>adet · %{{ k.adet_yuzde }}</span>
+                        </div>
+                        <div class="ilerleme-ray monitor-ilerleme-ray">
+                            <div class="ilerleme-dolgu" style="width: {{ [k.adet_yuzde, 100]|min }}%"></div>
+                        </div>
+                    </div>
+                    <div class="monitor-tarihler">
+                        <div>
+                            <div class="monitor-tarih-etiket">Başlangıç</div>
+                            <div class="monitor-tarih-deger">{{ k.plan_baslama|gun }}</div>
+                        </div>
+                        <div>
+                            <div class="monitor-tarih-etiket">Teslim</div>
+                            <div class="monitor-tarih-deger">{{ k.plan_teslim|gun }}</div>
+                        </div>
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="bos-durum monitor-bos">Şu anda dizgide kart bulunmuyor.</div>
+            {% endif %}
+        </article>
+
+        <article class="monitor-bolum monitor-plana">
+            <div class="monitor-bolum-baslik">
+                <div>
+                    <p class="ust-etiket">ÜRETİM KUYRUĞU</p>
+                    <h2>PLANA ALINDI</h2>
+                </div>
+                <span class="sayi-rozet">{{ plana_alindi|length }}</span>
+            </div>
+
+            {% if plana_alindi %}
+            <div class="monitor-liste" data-monitor-grup="plan">
+                {% for k in plana_alindi %}
+                <article class="monitor-kart monitor-kart-plan {{ k.renk }}" data-monitor-kart>
+                    <div class="monitor-kart-govde">
+                        <div class="monitor-kart-ust">
+                            <div class="monitor-talep">
+                                <span>TALEP</span>
+                                <strong>{{ k.talep_no or "—" }}</strong>
+                            </div>
+                            <span class="durum-rozet {{ k.renk }}">{{ k.rozet }}</span>
+                        </div>
+                        {% if k.dizgi_kod != 'MAKINE' or k.malzeme_bekliyor %}
+                        <div class="monitor-ek-rozetler">
+                            {% if k.dizgi_kod == 'ELLE' %}<span class="durum-rozet elle">Elle Dizgi</span>{% endif %}
+                            {% if k.dizgi_kod == 'EUM' %}<span class="durum-rozet eum">EÜM'de Dizgi</span>{% endif %}
+                            {% if k.malzeme_bekliyor %}<span class="durum-rozet uyari">Malzeme Bekliyor</span>{% endif %}
+                        </div>
+                        {% endif %}
+                        <h3>{{ k.stok_no or "Stok no yok" }}</h3>
+                        <p class="monitor-sahip">{{ k.talep_sahibi or "—" }}</p>
+                        <div class="monitor-adet-satir">
+                            <strong>{{ k.toplam_adet }}</strong>
+                            <span>adet planlandı</span>
+                        </div>
+                    </div>
+                    <div class="monitor-tarihler">
+                        <div>
+                            <div class="monitor-tarih-etiket">Başlangıç</div>
+                            <div class="monitor-tarih-deger">{{ k.plan_baslama|gun }}</div>
+                        </div>
+                        <div>
+                            <div class="monitor-tarih-etiket">Teslim</div>
+                            <div class="monitor-tarih-deger">{{ k.plan_teslim|gun }}</div>
+                        </div>
+                    </div>
+                </article>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="bos-durum monitor-bos">Plana alınmış bekleyen kart yok.</div>
+            {% endif %}
+        </article>
+
+    </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+    const saat = document.getElementById("monitor-saat");
+
+    function saatiGuncelle() {
+        if (!saat) return;
+        saat.textContent = new Intl.DateTimeFormat("tr-TR", {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit"
+        }).format(new Date());
+    }
+
+    function sayfaBoyutuHesapla() {
+        // Laptop / kısa ekran: 4 kart (2x2). Geniş/yüksek: 6 kart (2x3).
+        const kisa = window.matchMedia("(max-height: 900px)").matches;
+        const dar = window.matchMedia("(max-width: 1100px)").matches;
+        return (kisa || dar) ? 4 : 6;
+    }
+
+    function rotasyonBaslat(grup) {
+        const kartlar = [...grup.querySelectorAll("[data-monitor-kart]")];
+        let aktifSayfa = 0;
+        let sayfaBoyutu = sayfaBoyutuHesapla();
+
+        function uygula() {
+            sayfaBoyutu = sayfaBoyutuHesapla();
+            const sayfaSayisi = Math.max(1, Math.ceil(kartlar.length / sayfaBoyutu));
+            if (aktifSayfa >= sayfaSayisi) aktifSayfa = 0;
+            const baslangic = aktifSayfa * sayfaBoyutu;
+            const bitis = baslangic + sayfaBoyutu;
+            kartlar.forEach((kart, index) => {
+                kart.classList.toggle("monitor-gizli", !(index >= baslangic && index < bitis));
+            });
+            return sayfaSayisi;
+        }
+
+        uygula();
+
+        window.setInterval(() => {
+            const sayfaSayisi = Math.max(1, Math.ceil(kartlar.length / sayfaBoyutuHesapla()));
+            aktifSayfa = (aktifSayfa + 1) % sayfaSayisi;
+            uygula();
+        }, 5000);
+
+        window.addEventListener("resize", () => {
+            aktifSayfa = 0;
+            uygula();
+        });
+    }
+
+    // İlk boyamada fazla kartı gizle (JS yüklenmeden layout bozulmasın)
+    document.querySelectorAll("[data-monitor-grup]").forEach((grup) => {
+        const boyut = sayfaBoyutuHesapla();
+        [...grup.querySelectorAll("[data-monitor-kart]")].forEach((kart, index) => {
+            kart.classList.toggle("monitor-gizli", index >= boyut);
+        });
+    });
+
+    saatiGuncelle();
+    window.setInterval(saatiGuncelle, 1000);
+    document.querySelectorAll("[data-monitor-grup]").forEach(rotasyonBaslat);
+    window.setTimeout(() => window.location.reload(), 50000);
+})();
+</script>
+{% endblock %}

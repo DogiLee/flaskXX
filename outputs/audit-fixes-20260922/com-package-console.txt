@@ -1,0 +1,79 @@
+GER�EK EXCEL COM + GER�EK PARSER / MERGE / KALICI DEPO
+T�m i�lemler ge�ici veri klas�r�nde yap�ld�. �retim verisine dokunulmad�.
+Bu rapor import senaryolar�n� do�rular. UI/rol/monitor ad�mlar� TEST REHBER� ile ayr�ca denenmelidir.
+
+01: 89 kaynak sat�r� import edildi.
+MAK�NE/ELDE ayn� talep ve stok ba��ms�z.
+Harfli NO N001 ve N1 ayr� kimlikler.
+E�M 1001: Pazartesi/bo� tarih = 2026-09-14.
+E�M 3002: Pazartesi/bo� tarih = 2026-09-14.
+E�M 3003: Pazartesi/bo� tarih = 2026-09-21.
+E�M 3004: Pazartesi/bo� tarih = 2025-12-29.
+E�M 3005: Pazartesi/bo� tarih = 2026-09-21.
+E�M 3006: Pazartesi/bo� tarih = None.
+E�M 3008: Pazartesi/bo� tarih = 2026-09-14.
+Tarihsiz teslimde tarih uydurulmad�.
+1025: metinsel adet 1500.
+1026: metinsel adet 1500.
+1027: metinsel adet 1500.
+Bo�/ge�ersiz durum y�netimde eksik.
+Ayn� dosya tekrar�nda yeni kart yok.
+02: 1 yeni, 1 pasif; 89 aktif kaynak.
+02: yaln�z silinen duplicate 1003 pasif.
+Sat�r s�ralamas� de�i�ince b�t�n eski ID�ler korundu.
+02: silinen plan tarihleri temizlendi.
+02: de�i�en plan tarihleri g�ncellendi.
+02: ayn� kimlikte talep/stok d�zeltmesi i�lendi.
+02: 3 tamamlanan adet ve manuel notlar korundu.
+02: Excel durumu D�ZG�DE oldu.
+03: silinen sat�r ayn� ID ile geri geldi.
+03: Excel teslim ge�i�i uyguland�.
+03: ger�ekle�en teslim tarihi temizlendi.
+H01_TEKRAR_NO.xlsx: hata sonras� bellek de�i�medi.
+H01_TEKRAR_NO.xlsx: hata sonras� kal�c� dosyalar de�i�medi.
+  Ret nedeni: 'MAK�NE' sat�r 6: Tekrarlanan kaynak kimli�i NO:1001.
+H02_EKSIK_KIMLIK.xlsx: hata sonras� bellek de�i�medi.
+H02_EKSIK_KIMLIK.xlsx: hata sonras� kal�c� dosyalar de�i�medi.
+  Ret nedeni: 'MAK�NE' sat�r 5: Kal�c� NO veya PDGM_ROW_ID gerekli. Her sat�ra benzersiz ve sonraki y�klemelerde de�i�meyen bir kimlik verin.
+H03_EKSIK_STOK.xlsx: hata sonras� bellek de�i�medi.
+H03_EKSIK_STOK.xlsx: hata sonras� kal�c� dosyalar de�i�medi.
+  Ret nedeni: 'MAK�NE' sat�r 5: Talep NO ve Kart Stok No gerekli; eksik sat�r silinmi� kabul edilmedi.
+H04_EKSIK_TALEP.xlsx: hata sonras� bellek de�i�medi.
+H04_EKSIK_TALEP.xlsx: hata sonras� kal�c� dosyalar de�i�medi.
+  Ret nedeni: 'MAK�NE' sat�r 5: Talep NO ve Kart Stok No gerekli; eksik sat�r silinmi� kabul edilmedi.
+H05_SIFIR_ADET.xlsx: hata sonras� bellek de�i�medi.
+H05_SIFIR_ADET.xlsx: hata sonras� kal�c� dosyalar de�i�medi.
+  Ret nedeni: 'MAK�NE' sayfas�, sat�r 5: �retim adedi en az 1 olmal�: 0
+H06_KESIRLI_ADET.xlsx: hata sonras� bellek de�i�medi.
+H06_KESIRLI_ADET.xlsx: hata sonras� kal�c� dosyalar de�i�medi.
+  Ret nedeni: 'MAK�NE' sayfas�, sat�r 5: �retim adedi tam say� olmal�: 2.5
+H07_BELIRSIZ_ADET.xlsx: hata sonras� bellek de�i�medi.
+H07_BELIRSIZ_ADET.xlsx: hata sonras� kal�c� dosyalar de�i�medi.
+  Ret nedeni: 'MAK�NE' sayfas�, sat�r 5: �retim adedi tek bir say� i�ermeli: '400 / 500 ADET'
+H08_GECERSIZ_TARIH.xlsx: hata sonras� bellek de�i�medi.
+H08_GECERSIZ_TARIH.xlsx: hata sonras� kal�c� dosyalar de�i�medi.
+  Ret nedeni: Excel sat�r 5: Planlanan Teslim Tarihi okunamad�. Gelen de�er: '31.02.2026'
+H09_TERS_TARIHLER.xlsx: hata sonras� bellek de�i�medi.
+H09_TERS_TARIHLER.xlsx: hata sonras� kal�c� dosyalar de�i�medi.
+  Ret nedeni: 'MAK�NE' sayfas�, sat�r 5: Dizgi Ba�lama Tarihi (2026-10-05) Planlanan Teslim Tarihinden (2026-09-21) sonra olamaz.
+H10_MAKINE_YOK.xlsx: hata sonras� bellek de�i�medi.
+H10_MAKINE_YOK.xlsx: hata sonras� kal�c� dosyalar de�i�medi.
+  Ret nedeni: 'MAK�NE' sayfas� bulunamad�. Dosyadaki sayfalar: TEST REHBER�, ELDE D�ZG�, E�M
+H11_TEKRAR_BASLIK.xlsx: hata sonras� bellek de�i�medi.
+H11_TEKRAR_BASLIK.xlsx: hata sonras� kal�c� dosyalar de�i�medi.
+  Ret nedeni: 'MAK�NE' sayfas�: 'ADET' i�in birden fazla g�r�n�r Excel s�tunu bulundu.
+H12_ADET_KOLONU_YOK.xlsx: hata sonras� bellek de�i�medi.
+H12_ADET_KOLONU_YOK.xlsx: hata sonras� kal�c� dosyalar de�i�medi.
+  Ret nedeni: 'MAK�NE' sayfas�: Zorunlu 'Kart �retim Adet' s�tunu bulunamad�.
+H13_MANUEL_ADET_CELISKISI.xlsx: hata sonras� bellek de�i�medi.
+H13_MANUEL_ADET_CELISKISI.xlsx: hata sonras� kal�c� dosyalar de�i�medi.
+  Ret nedeni: EXCEL:v2:["MAKINE","NO:1012"]: Excel toplam adedi (2), tamamlanan adetten (3) k���k. Import iptal edildi.
+04: yaln�z 8 ELDE kart� pasifle�ti.
+05: t�m Excel kartlar� pasif, manuel kart aktif.
+Yeniden okumadaki tek temsil fark�: bo� metin ile bo� h�cre.
+Yeniden okumada ID, tarih, not ve kaynak aktifli�i korundu.
+B01 kan�t� A35: kaynak='001' (s, @); COM snapshot='001' (s, @).
+B01 kan�t� A36: kaynak='1' (s, @); COM snapshot='1' (s, @).
+B01: ba�taki s�f�rlar COM snapshot s�n�r�nda korundu.
+B01: ger�ek COM importunda 001 ve 1 ayr� kartlar.
+
