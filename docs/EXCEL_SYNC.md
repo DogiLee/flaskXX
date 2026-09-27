@@ -50,11 +50,11 @@ metin biçiminde taşınır; metinsel `001` ve `1` ayrı kalır.
 | gerceklesen_teslim | Boşaltma dahil Excel authoritative; bugünün tarihi uydurulmaz |
 | excel_durum, pcb, dizgi_tipi, dizgi_sorumlusu, malzeme_bekliyor | Kaynaktan güncellenir |
 | Geçerli DURUM | Excel authoritative; TESLİM EDİLDİ tarihi eksik olsa da kabul edilir, uyarı sayılır. İstisna (27.09.2026): önizlemeden onaylanan importta Excel'in durumu uygulamadakinin gerisindeyse (HAZIR < PLANA < DİZGİDE < TESLİM) kart "Karar gerekiyor" bölümüne düşer; admin Excel ile uygulama durumu arasından seçer. Öneri: kart uygulamada ilerletildiyse (başlama/teslim zamanı var) uygulamadaki durum, değilse Excel. Uygulamadaki TESLİM korunursa teslim tarihi de korunur. Önizlemesiz doğrudan import eskisi gibi Excel'i uygular |
-| Boş DURUM veya MALZEME TEDARİK / PDGM ÖNERİ | Var olan manuel workflow/adet korunur; yeni kartın durumu boş kalır |
+| Boş DURUM veya MALZEME TEDARİK / PDGM ÖNERİ | Yeni kartın durumu boş kalır. Uygulamada durumu olan kart (27.09.2026): önizlemeden onaylanan importta "Karar gerekiyor" bölümüne düşer; seçenekler "Durumsuz bırak" (durum boş, tamamlanan 0, başlama/bitiş/teslim zamanı silinir, kart Durumu Eksik listesine düşer) ve uygulamadaki durumu korumak. Öneri: durum uygulamada verildiyse (başlama/teslim zamanı var veya kartta saklı önceki Excel DURUM metni bu duruma karşılık gelmiyor, ör. admin Durum Ata) koru, Excel'den geldiyse durumsuz bırak. Karar "EXCEL DURUM BOŞ: DURUM KARARI" olarak loglanır; korunan kartın operatör alanına "Excel" yazılmaz. Önizlemesiz doğrudan import eskisi gibi workflow/adet korur |
 | Tanınmayan DURUM yazımı | Tüm import durdurulur; satır ve kabul edilen değerler listelenir |
 | Tamamlanan adet | Plan/HAZIR=0; teslim=toplam; DİZGİDE kısmi üretimi korur. Önizlemede, bu importta güncellenen ve DİZGİDE kalan (tamamlanan > 0) kartlar için admin "Tamamlanan adedi sıfırla" seçebilir (varsayılan işaretsiz; sıfırlama bitiş zamanını da temizler, not/başlama korunur; önizlemede sunulmayan kart seçimi importu iptal eder) |
 | Çelişkili miktar | DİZGİDE veya workflow korunan kartta toplam, tamamlanandan küçükse tüm import iptal edilir |
-| operator, aciklama, admin_gizli | Korunur; boş operatör geçerli Excel durumunda Excel olabilir |
+| operator, aciklama, admin_gizli | Korunur; boş operatör geçerli Excel durumunda Excel olabilir. Notlar (aciklama) yalnız admin önizlemede "Notları temizle" işaretlerse silinir (27.09.2026): seçenek, bu importta durumu değişen veya durum kararı istenen, notu olan kartlarda çıkar; silinen metin "EXCEL: NOTLAR TEMİZLENDİ" loguna yazılır; önizlemede sunulmayan kart seçimi importu iptal eder |
 | Workflow zaman damgaları | Gerçek mevcut kayıtlar korunur veya durum gerilemesinde temizlenir; import zamanı olay tarihi gibi yazılmaz |
 | Teslim zaman damgası | Kaynak teslim tarihi değişirse/boşalırsa temizlenir; eski tarih UI'a geri sızmaz |
 | Kaynakta olmayan Excel kartı | source_active=0; tarih/not/ID fiziksel olarak saklanır |
@@ -80,8 +80,9 @@ başlangıç da boştur. Alanların hiçbiri yoksa mevcut açık başlangıç ta
 Sayısal tarihler workbook'un 1900/1904 epoch'una göre çözülür. ISO saat dilimli
 tarihlerde kaynak takvim günü korunur; UTC dönüşümü ile gün kaydırılmaz.
 
-Monitor backend yalnız `dizgi_kod == "MAKINE"` gönderir. PLANINDA rozetinin metni
-yalnız monitor'da PLANDA olur; gecikme ve son gün uyarıları kalır. Pano/operator
+Monitor backend yalnız `dizgi_kod == "MAKINE"` gönderir. "SÜRESİ İÇİNDE (teslime N gün kaldı)"
+rozeti (eski adı "PLANINDA (N gün var)") monitor'da kısaca "SÜRESİ İÇİNDE" olur; gecikme ve
+son gün uyarıları kalır. Pano/operator
 ayrıntılı rozetleri değişmez. Slider 12 saniyedir. Yenileme en az 60 saniyede,
 en uzun grubun tüm sayfalarını göstermesine yetecek süre sonunda yapılır; sayfa
 konumu sessionStorage'da tutulur. Çok sayfalı monitor'da yenileme 60 saniyeyi aşabilir.

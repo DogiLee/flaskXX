@@ -13,19 +13,27 @@
         });
     });
 
-    // Tamamlanan adet sıfırlama seçimleri: onay çubuğundaki sayaç ve grup bazında toplu seçim.
+    // Tamamlanan adet sıfırlama ve not temizleme seçimleri: onay çubuğundaki sayaçlar
+    // ve grup bazında toplu seçim.
     const sifirlaKutulari = [...document.querySelectorAll("input[data-sifirla]")];
+    const notKutulari = [...document.querySelectorAll("input[data-not-temizle]")];
     const sifirlaOzeti = document.querySelector("[data-sifirla-ozet]");
-    function sifirlaOzetiniGuncelle() {
-        if (!sifirlaOzeti) return;
-        const secili = sifirlaKutulari.filter((kutu) => kutu.checked).length;
-        sifirlaOzeti.hidden = secili === 0;
-        sifirlaOzeti.querySelector("i").textContent = secili;
+    const notOzeti = document.querySelector("[data-not-ozet]");
+    function sayaciGuncelle(ozet, kutular) {
+        if (!ozet) return;
+        const secili = kutular.filter((kutu) => kutu.checked).length;
+        ozet.hidden = secili === 0;
+        ozet.querySelector("i").textContent = secili;
     }
-    sifirlaKutulari.forEach((kutu) => kutu.addEventListener("change", sifirlaOzetiniGuncelle));
+    function sifirlaOzetiniGuncelle() {
+        sayaciGuncelle(sifirlaOzeti, sifirlaKutulari);
+        sayaciGuncelle(notOzeti, notKutulari);
+    }
+    [...sifirlaKutulari, ...notKutulari].forEach((kutu) => kutu.addEventListener("change", sifirlaOzetiniGuncelle));
     document.querySelectorAll("[data-hepsini-sec]").forEach((buton) => {
+        const secici = buton.dataset.hepsiniSec === "not" ? "input[data-not-temizle]" : "input[data-sifirla]";
         buton.addEventListener("click", () => {
-            const kutular = [...buton.closest(".etki-grup").querySelectorAll("input[data-sifirla]")];
+            const kutular = [...buton.closest(".etki-grup").querySelectorAll(secici)];
             const hepsiSecili = kutular.every((kutu) => kutu.checked);
             kutular.forEach((kutu) => { kutu.checked = !hepsiSecili; });
             buton.textContent = hepsiSecili ? "Tümünü işaretle" : "İşaretleri kaldır";
@@ -36,6 +44,7 @@
 
     // Excel'in geride kaldığı kartlar: seçilen duruma göre sonuç metni ve sıfırlama kutusu.
     const DURUM_SONUCU = {
+        "": "Kart durumsuz kalır: Pano, Operatör ve Monitör'den kalkar, Yönetim'deki Durumu Eksik Kartlar listesine düşer; tamamlanan adet 0 olur, başlama, bitiş ve teslim bilgileri silinir.",
         "HAZIR": "Kart HAZIR'a döner: tamamlanan adet 0 olur, başlama, bitiş ve teslim bilgileri silinir.",
         "PLANA ALINDI": "Kart plana döner: tamamlanan adet 0 olur, başlama, bitiş ve teslim bilgileri silinir.",
         "DİZGİDE": "Kart DİZGİDE olur: tamamlanan adet korunur (isterseniz sıfırlayın), teslim bilgisi silinir.",
@@ -46,7 +55,7 @@
     function gerilemeKartiniGuncelle(secim) {
         const kart = secim.closest("[data-gerileme-kart]");
         const kaynak = secim.value === secim.dataset.excel ? "Excel'deki durum uygulanır. " : "Uygulamadaki ilerleme korunur. ";
-        kart.querySelector("[data-gerileme-sonuc]").textContent = kaynak + (DURUM_SONUCU[secim.value] || "");
+        kart.querySelector("[data-gerileme-sonuc]").textContent = kaynak + (DURUM_SONUCU[secim.value] ?? "");
         kart.classList.toggle("uygulama-korunuyor", secim.value !== secim.dataset.excel);
         const kutu = kart.querySelector("[data-gerileme-sifirla]");
         if (kutu) {

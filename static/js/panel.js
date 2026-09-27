@@ -71,7 +71,13 @@
             durum.bilgi.textContent = `${durum.sayfa + 1} / ${sonSayfa + 1} sayfa · ${uygunlar.length} eşleşme`;
         });
 
-        sonuc.textContent = gorunen ? `${gosterilen} / ${gorunen} kart gösteriliyor` : "Sonuç bulunamadı";
+        // Her bölüm sayfa başına 12 kart gösterir; toplam eşleşme ile o an ekranda olan ayrı yazılır.
+        const sayfada = gorunen - gosterilen;
+        sonuc.textContent = !gorunen
+            ? "Sonuç bulunamadı"
+            : sayfada
+                ? `${gorunen} kart bulundu · ekranda ${gosterilen}, sonraki sayfalarda ${sayfada}`
+                : `${gorunen} kart bulundu`;
         bos.hidden = gorunen !== 0;
         temizle.hidden = !metin && durumFiltresi.deger === "HEPSI" && dizgiFiltresi.deger === "HEPSI";
     }

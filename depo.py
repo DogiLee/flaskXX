@@ -50,6 +50,8 @@ PLANA_ALINDI = "PLANA ALINDI"
 DIZGIDE = "DİZGİDE"
 HAZIR = "HAZIR"
 TESLIM_EDILDI = "TESLİM EDİLDİ"
+# Planlanan teslimden önce süren DİZGİDE kartın rozeti; monitör yalnız bu kısa hâlini gösterir.
+SURESI_ICINDE = "SÜRESİ İÇİNDE"
 
 # Dizgi tipi: kart hangi kaynak sayfadan geldi (MAKİNE / ELDE DİZGİ / EÜM).
 # Bu, workflow'dan (durum) tamamen bağımsız ikinci bir boyuttur; kaynağı yapısal
@@ -1319,7 +1321,8 @@ def durum_bilgisi(kart):
             bilgi["rozet"] = "SON GÜN" if kalan == 0 else "SON 1 GÜN"
             bilgi["renk"] = "uyari"
         else:
-            bilgi["rozet"], bilgi["renk"] = f"PLANINDA ({kalan} gün var)", "iyi"
+            # "SÜRE AŞILDI (N gün)" ile karşıt; parantez sayının neyi anlattığını söyler.
+            bilgi["rozet"], bilgi["renk"] = f"{SURESI_ICINDE} (teslime {kalan} gün kaldı)", "iyi"
         return bilgi
 
     gecikme = gun_farki(bugun_iso, plan_baslama)
@@ -2239,9 +2242,17 @@ def _uygulamada_ilerletildi_mi(kart):
     return False
 
 
+def _karar_sayisi(kararlar, tur, korunan=False):
+    """Önizlemedeki durum kararlarından bir türün sayısı; korunan=True ise
+    uygulamadaki durumun korunduğu (Excel'deki durumun seçilmediği) kartlar."""
+    return sum(1 for k in kararlar.values()
+               if k["karar_turu"] == tur and (not korunan or k["secilen"] != k["excel_durum"]))
+
+
 def excel_import_uygula(dosya_adi, kullanici, satirlar, uyari_sayisi=0,
                        sadece_onizleme=False, beklenen_surum=None, kaynak_ozeti="",
-                       tamamlanan_sifirla=(), gerileme_secimleri=None):
+                       tamamlanan_sifirla=(), gerileme_secimleri=None, notlari_temizle=(),
+                       kaynak_durum_coz=None):
     """Tamamen parse/validate edilmiş kaynak satırlarını tek transaction-benzeri blokta uygular.
 
     tamamlanan_sifirla: önizlemede admin'in seçtiği kart ID'leri. Yalnız bu importta
@@ -2254,6 +2265,19 @@ def excel_import_uygula(dosya_adi, kullanici, satirlar, uyari_sayisi=0,
     uygulamadaki durum arasındadır. None ise (önizlemesiz doğrudan import) eski
     sözleşme geçerlidir: Excel'in durumu uygulanır; önizleme ise önerilen seçimi
     gösterir. Sözlük verilirse her gerileyen kart için geçerli seçim zorunludur.
+
+    Excel'de DURUM boş (veya MALZEME TEDARİK / PDGM ÖNERİ gibi bir iş akışı durumu
+    olmayan metin) iken uygulamada durumu olan kart da aynı karar listesine girer:
+    seçenekler durumsuz bırakmak (None, form değeri "") ya da uygulamadaki durumu
+    korumaktır. Önizlemesiz doğrudan importta eski sözleşme sürer: durum korunur.
+
+    notlari_temizle: önizlemede "Notları temizle" işaretlenen kart ID'leri. Yalnız bu
+    aktarımda durumu değişen veya durum kararı istenen, notu olan kartlar seçilebilir.
+    Silinen not metni işlem loguna yazılır. Uygun olmayan bir ID importu iptal eder.
+
+    kaynak_durum_coz: kartta saklı ham Excel DURUM metnini iş akışı durumuna çeviren
+    fonksiyon (excel_araclari verir). Boş DURUM kararında önerilen seçimi belirler:
+    kartın durumu önceki Excel metninden gelmediyse uygulamada verilmiştir.
     """
     global _kartlar, _loglar, _yuklemeler
 
@@ -2293,6 +2317,10 @@ def excel_import_uygula(dosya_adi, kullanici, satirlar, uyari_sayisi=0,
             secimler = (None if gerileme_secimleri is None
                         else {_sayi(k, -1): v for k, v in gerileme_secimleri.items()})
             gerilemeler = {}
+            not_temizle = {_sayi(kart_id, -1) for kart_id in (notlari_temizle or ())}
+            not_temizlenebilir = set()
+            notu_temizlenen = 0
+            onceki_durumu_coz = kaynak_durum_coz or _durum_normalize
             sonraki_id = max([_sayi(kart.get("id"), 0) for kart in _kartlar] or [0]) + 1
 
             for satir in satirlar:
@@ -2329,22 +2357,38 @@ def excel_import_uygula(dosya_adi, kullanici, satirlar, uyari_sayisi=0,
                     onceki_durum = mevcut.get("durum")
                     etkin_durum = yeni_durum
                     gerileme = None
+                    karar_turu = None
                     if (yeni_durum in DURUM_ILERLEME and onceki_durum in DURUM_ILERLEME
                             and DURUM_ILERLEME[yeni_durum] < DURUM_ILERLEME[onceki_durum]):
+                        karar_turu = "geride"
                         secenekler = [durum for durum, sira in sorted(DURUM_ILERLEME.items(), key=lambda x: x[1])
                                       if DURUM_ILERLEME[yeni_durum] <= sira <= DURUM_ILERLEME[onceki_durum]]
                         uygulamada = _uygulamada_ilerletildi_mi(mevcut)
+                    elif (yeni_durum is None and onceki_durum is not None
+                          and (secimler is not None or sadece_onizleme)):
+                        # Excel bu kart için bir iş akışı durumu söylemiyor (DURUM boş,
+                        # MALZEME TEDARİK, PDGM ÖNERİ). Önizlemeli akışta durum sessizce
+                        # korunmaz: admin kartı durumsuz bırakmakla uygulamadaki durumu
+                        # korumak arasında seçer. Önizlemesiz doğrudan import eski
+                        # sözleşmeyi sürdürür: karar yok, iş akışı olduğu gibi korunur.
+                        karar_turu = "durumsuz"
+                        secenekler = [None, onceki_durum]
+                        uygulamada = (_uygulamada_ilerletildi_mi(mevcut)
+                                      or onceki_durumu_coz(mevcut.get("excel_durum")) != onceki_durum)
+                    if karar_turu:
                         onerilen = onceki_durum if uygulamada else yeni_durum
                         if secimler is None:
                             etkin_durum = onerilen if sadece_onizleme else yeni_durum
                         else:
                             etkin_durum = _durum_normalize(secimler.get(mevcut["id"]))
-                            if etkin_durum not in secenekler:
+                            if mevcut["id"] not in secimler or etkin_durum not in secenekler:
                                 raise IsKuralHatasi(
-                                    f"Kart {mevcut['id']} ({mevcut.get('talep_no')}): Excel'in geride kaldığı kart için "
-                                    "geçerli bir durum seçilmedi. Aktarım uygulanmadı; yeni önizleme oluşturun."
+                                    f"Kart {mevcut['id']} ({mevcut.get('talep_no')}): "
+                                    + ("Excel'in geride kaldığı" if karar_turu == "geride" else "Excel'de DURUM'u boş olan")
+                                    + " kart için geçerli bir durum seçilmedi. Aktarım uygulanmadı; yeni önizleme oluşturun."
                                 )
                         gerileme = {
+                            "karar_turu": karar_turu,
                             "excel_durum": yeni_durum, "uygulama_durum": onceki_durum, "secenekler": secenekler,
                             "onerilen": onerilen, "secilen": etkin_durum, "uygulamada": uygulamada,
                             "onceki_excel_durum": mevcut.get("excel_durum"),
@@ -2355,13 +2399,16 @@ def excel_import_uygula(dosya_adi, kullanici, satirlar, uyari_sayisi=0,
                         gerilemeler[mevcut["id"]] = gerileme
                         if DIZGIDE in secenekler and tamamlanan > 0:
                             sifirlanabilir_olasi.add(mevcut["id"])
-                    if etkin_durum is None or etkin_durum == DIZGIDE:
-                        if yeni_toplam < tamamlanan:
-                            raise IsKuralHatasi(
-                                f"{anahtar}: Excel toplam adedi ({yeni_toplam}), tamamlanan "
-                                f"adetten ({tamamlanan}) küçük. Import iptal edildi."
-                            )
-                    if etkin_durum is None and onceki_durum == TESLIM_EDILDI and yeni_toplam != tamamlanan:
+                    # Karar olmadan durum gelmiyorsa (doğrudan import) iş akışı olduğu gibi
+                    # korunur ve adet kuralları o iş akışına göre denetlenir. Admin kararıyla
+                    # durumsuz kalan kartın adedi aşağıda 0'a iner, dolayısıyla denetim gerekmez.
+                    is_akisi_korunur = etkin_durum is None and karar_turu != "durumsuz"
+                    if (is_akisi_korunur or etkin_durum == DIZGIDE) and yeni_toplam < tamamlanan:
+                        raise IsKuralHatasi(
+                            f"{anahtar}: Excel toplam adedi ({yeni_toplam}), tamamlanan "
+                            f"adetten ({tamamlanan}) küçük. Import iptal edildi."
+                        )
+                    if is_akisi_korunur and onceki_durum == TESLIM_EDILDI and yeni_toplam != tamamlanan:
                         raise IsKuralHatasi(f"{anahtar}: Teslim edilmiş kartın adedi için geçerli Excel DURUM gerekli.")
 
                     if not mevcut.get("source_key"):
@@ -2384,8 +2431,17 @@ def excel_import_uygula(dosya_adi, kullanici, satirlar, uyari_sayisi=0,
                         mevcut.update(gerceklesen_teslim=onceki.get("gerceklesen_teslim"),
                                       teslim_zamani=onceki.get("teslim_zamani"))
                     if etkin_durum is None:
-                        workflow_korundu += 1
+                        if karar_turu == "durumsuz":
+                            # Admin kararıyla Excel'deki gibi durumsuz: operasyon ekranlarından
+                            # kalkar, Durumu Eksik listesine düşer. Durumsuz kartta adet 0'dır.
+                            mevcut.update(durum=None, tamamlanan_adet=0, baslangic_adet=0,
+                                          baslama_zamani=None, bitis_zamani=None, teslim_zamani=None)
+                            durum_iyilesen += 1
+                        else:
+                            workflow_korundu += 1
                     else:
+                        if karar_turu == "durumsuz":
+                            workflow_korundu += 1
                         mevcut["durum"] = etkin_durum
                         durum_iyilesen += int(onceki_durum != etkin_durum)
                         if etkin_durum in (PLANA_ALINDI, HAZIR):
@@ -2399,9 +2455,23 @@ def excel_import_uygula(dosya_adi, kullanici, satirlar, uyari_sayisi=0,
                         elif etkin_durum == TESLIM_EDILDI:
                             mevcut["tamamlanan_adet"] = yeni_toplam
                             mevcut["baslangic_adet"] = min(mevcut.get("baslangic_adet") or yeni_toplam, yeni_toplam)
-                        # Excel import zamanı gerçek üretim/teslim zamanı değildir.
-                        mevcut["operator"] = mevcut.get("operator") or "Excel"
+                        # Excel import zamanı gerçek üretim/teslim zamanı değildir. Uygulamadaki
+                        # durumu korunan durumsuz kartta durum Excel'den gelmez; operatör alanı kalır.
+                        if karar_turu != "durumsuz":
+                            mevcut["operator"] = mevcut.get("operator") or "Excel"
                     _kart_dogrula(mevcut)
+                    # Durumu değişen (veya durum kararı istenen) kartın eski notları yeni
+                    # duruma taşınmasın isteniyorsa admin önizlemede temizletir.
+                    if _temiz_metin(onceki.get("aciklama")) and (gerileme or mevcut.get("durum") != onceki_durum):
+                        not_temizlenebilir.add(mevcut["id"])
+                        if mevcut["id"] in not_temizle:
+                            mevcut["aciklama"] = None
+                            notu_temizlenen += 1
+                            _loglar.append(_log_kaydi(
+                                kullanici, "admin", "EXCEL: NOTLAR TEMİZLENDİ", mevcut["talep_no"], mevcut["stok_no"],
+                                detay=(f"ID={mevcut['id']} kaynak={anahtar} durum {onceki_durum or 'yok'} -> "
+                                       f"{mevcut.get('durum') or 'yok'}. Silinen notlar:\n{onceki.get('aciklama')}"),
+                            ))
                     degisiklik = {a: [onceki.get(a), mevcut.get(a)] for a in mevcut
                                  if a != "guncelleme" and onceki.get(a) != mevcut.get(a)}
                     # Güncellenen ve DİZGİDE kalan kartta operatörün girdiği tamamlanan adet
@@ -2415,11 +2485,19 @@ def excel_import_uygula(dosya_adi, kullanici, satirlar, uyari_sayisi=0,
                             degisiklik = {a: [onceki.get(a), mevcut.get(a)] for a in mevcut
                                          if a != "guncelleme" and onceki.get(a) != mevcut.get(a)}
                             sifirlanan += 1
-                    if gerileme:
+                    if gerileme and karar_turu == "geride":
                         _loglar.append(_log_kaydi(
                             kullanici, "admin", "EXCEL GERİDE: DURUM KARARI", mevcut["talep_no"], mevcut["stok_no"],
                             detay=(f"ID={mevcut['id']} kaynak={anahtar}: uygulama {onceki_durum}, Excel {yeni_durum} -> "
                                    f"{etkin_durum}" + (" (uygulamadaki korundu)" if etkin_durum != yeni_durum else "")),
+                        ))
+                    elif gerileme:
+                        excel_metni = _temiz_metin(plan.get("excel_durum"))
+                        _loglar.append(_log_kaydi(
+                            kullanici, "admin", "EXCEL DURUM BOŞ: DURUM KARARI", mevcut["talep_no"], mevcut["stok_no"],
+                            detay=(f"ID={mevcut['id']} kaynak={anahtar}: uygulama {onceki_durum}, Excel DURUM "
+                                   + (f"'{excel_metni}' (iş akışı durumu değil)" if excel_metni else "boş") + " -> "
+                                   + (f"{etkin_durum} (uygulamadaki korundu)" if etkin_durum else "durumsuz bırakıldı")),
                         ))
                     if degisiklik:
                         guncellenen += 1
@@ -2479,6 +2557,13 @@ def excel_import_uygula(dosya_adi, kullanici, satirlar, uyari_sayisi=0,
                         "Durum kararı verilen kart bu aktarımda Excel'in gerisinde değil "
                         f"(ID: {', '.join(map(str, sorted(fazla)))}). Aktarım uygulanmadı; yeni önizleme oluşturun."
                     )
+            gecersiz_not = not_temizle - not_temizlenebilir
+            if gecersiz_not:
+                raise IsKuralHatasi(
+                    "Notları temizlenmek üzere seçilen kartın bu aktarımda durumu değişmiyor veya notu yok "
+                    f"(ID: {', '.join(map(str, sorted(gecersiz_not)))}). "
+                    "Aktarım uygulanmadı; dosyayı yeniden seçip yeni önizleme oluşturun."
+                )
             gecersiz_secim = sifirla - sifirlanabilir
             if gecersiz_secim:
                 raise IsKuralHatasi(
@@ -2542,6 +2627,8 @@ def excel_import_uygula(dosya_adi, kullanici, satirlar, uyari_sayisi=0,
                             "tamamlanan_adet": kart.get("tamamlanan_adet"),
                             "sifirlanabilir": kart["id"] in sifirlanabilir,
                             "gerileme": gerilemeler.get(kart["id"]),
+                            "aciklama": kart.get("aciklama"),
+                            "not_temizlenebilir": kart["id"] in not_temizlenebilir,
                         })
                 mevcut_aktif = sum(1 for k in eski_kartlar
                                    if k.get("kaynak") == "EXCEL" and k.get("source_active", 1) == 1)
@@ -2549,7 +2636,9 @@ def excel_import_uygula(dosya_adi, kullanici, satirlar, uyari_sayisi=0,
                         "guncellenen": guncellenen, "degismeyen": degismeyen,
                         "ayrilan": len(ayrilanlar),
                         "sifirlanabilir": sorted(sifirlanabilir | sifirlanabilir_olasi),
-                        "gerileme": len(gerilemeler),
+                        "not_temizlenebilir": sorted(not_temizlenebilir),
+                        "gerileme": _karar_sayisi(gerilemeler, "geride"),
+                        "durumsuz": _karar_sayisi(gerilemeler, "durumsuz"),
                         "pasife_alinan": pasife_alinan, "pasife_listesi": pasife_listesi,
                         "mevcut_aktif": mevcut_aktif,
                         "degisiklikler": degisiklikler, "uyari": uyari_sayisi}
@@ -2577,8 +2666,11 @@ def excel_import_uygula(dosya_adi, kullanici, satirlar, uyari_sayisi=0,
                         f"{workflow_korundu} workflow korundu · {durum_iyilesen} durum Excel'den değişti · "
                         f"{pasife_alinan} kaynakta yok · {len(ayrilanlar)} NO başka talebe verildi · "
                         f"{sifirlanan} kartın tamamlanan adedi admin seçimiyle sıfırlandı · "
-                        f"{len(gerilemeler)} kartta Excel geride "
-                        f"({sum(1 for g in gerilemeler.values() if g['secilen'] != g['excel_durum'])} uygulamadaki korundu) · "
+                        f"{notu_temizlenen} kartın notları admin seçimiyle temizlendi · "
+                        f"{_karar_sayisi(gerilemeler, 'geride')} kartta Excel geride "
+                        f"({_karar_sayisi(gerilemeler, 'geride', korunan=True)} uygulamadaki korundu) · "
+                        f"{_karar_sayisi(gerilemeler, 'durumsuz')} kartta Excel DURUM boş "
+                        f"({_karar_sayisi(gerilemeler, 'durumsuz', korunan=True)} uygulamadaki korundu) · "
                         f"{uyari_sayisi} uyarı · yedek={os.path.basename(yedek_klasoru)}"
                         + (f" · {kaynak_ozeti}" if kaynak_ozeti else "")
                     ),
@@ -2601,8 +2693,11 @@ def excel_import_uygula(dosya_adi, kullanici, satirlar, uyari_sayisi=0,
                 "degismeyen": degismeyen,
                 "ayrilan": len(ayrilanlar),
                 "sifirlanan": sifirlanan,
-                "gerileme": len(gerilemeler),
-                "gerileme_korunan": sum(1 for g in gerilemeler.values() if g["secilen"] != g["excel_durum"]),
+                "notu_temizlenen": notu_temizlenen,
+                "gerileme": _karar_sayisi(gerilemeler, "geride"),
+                "gerileme_korunan": _karar_sayisi(gerilemeler, "geride", korunan=True),
+                "durumsuz": _karar_sayisi(gerilemeler, "durumsuz"),
+                "durumsuz_korunan": _karar_sayisi(gerilemeler, "durumsuz", korunan=True),
                 "pasife_alinan": pasife_alinan,
                 "pasife_listesi": pasife_listesi[:20],
                 "workflow_korundu": workflow_korundu,

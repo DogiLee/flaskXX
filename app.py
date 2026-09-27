@@ -840,8 +840,9 @@ def monitor():
     veri = _pano_verisi()
     kartlar = [k for k in veri["kartlar"] if k.get("dizgi_kod") == "MAKINE"]
     for kart in kartlar:
-        if kart.get("rozet", "").startswith("PLANINDA ("):
-            kart["rozet"] = "PLANDA"
+        # Monitörde gün sayısı yerine kısa durum; teslim tarihi kartta zaten yazıyor.
+        if kart.get("rozet", "").startswith(f"{depo.SURESI_ICINDE} ("):
+            kart["rozet"] = depo.SURESI_ICINDE
 
     return render_template(
         "monitor.html",
@@ -1205,8 +1206,15 @@ def _import_mesaji(sonuc):
     if sonuc.get("gerileme"):
         mesaj += (f" · {sonuc['gerileme']} kartta Excel uygulamanın gerisindeydi; "
                   f"{sonuc.get('gerileme_korunan', 0)} kartta uygulamadaki durum korundu.")
+    if sonuc.get("durumsuz"):
+        korunan = sonuc.get("durumsuz_korunan", 0)
+        mesaj += (f" · {sonuc['durumsuz']} kartta Excel'de DURUM boştu; {korunan} kartta uygulamadaki durum "
+                  f"korundu, {sonuc['durumsuz'] - korunan} kart durumsuz bırakıldı (Durumu Eksik Kartlar).")
     if sonuc.get("sifirlanan"):
         mesaj += f" · {sonuc['sifirlanan']} kartın tamamlanan adedi seçiminizle sıfırlandı."
+    if sonuc.get("notu_temizlenen"):
+        mesaj += (f" · {sonuc['notu_temizlenen']} kartın notları seçiminizle temizlendi; "
+                  "silinen notlar işlem logunda.")
     if sonuc.get("durum_iyilesen"):
         mesaj += (
             f" · {sonuc['durum_iyilesen']} kartın durumu Excel'den güncellendi."
@@ -1258,7 +1266,8 @@ def yukle():
                 dosya_hash = hashlib.file_digest(kaynak, "sha256").hexdigest()
             session["import_onizleme"] = {"dosya": kayit_adi, "hash": dosya_hash,
                 "surum": sonuc["surum"], "kaynak_surum": sonuc["kaynak_surum"],
-                "sifirlanabilir": sonuc.get("sifirlanabilir", [])}
+                "sifirlanabilir": sonuc.get("sifirlanabilir", []),
+                "not_temizlenebilir": sonuc.get("not_temizlenebilir", [])}
             return render_template("import_onizleme.html", sonuc=sonuc, dosya=guvenli_ad)
         sonuc = ex.excelden_aktar(yol, session["kullanici"])
         mesaj = _import_mesaji(sonuc)
@@ -1296,12 +1305,19 @@ def yukle_onay():
         # sunulan kartlar kabul edilir (depo uygulama anında uygunluğu yeniden denetler).
         try:
             sifirla = sorted({int(deger) for deger in request.form.getlist("sifirla")})
+            not_temizle = sorted({int(deger) for deger in request.form.getlist("not_temizle")})
         except ValueError:
             raise depo.IsKuralHatasi("Geçersiz kart seçimi. Dosyayı yeniden seçin.") from None
         disarida = set(sifirla) - set(bekleyen.get("sifirlanabilir") or [])
         if disarida:
             raise depo.IsKuralHatasi(
                 "Tamamlanan adedi sıfırlanmak üzere önizlemede sunulmayan kart seçildi "
+                f"(ID: {', '.join(map(str, sorted(disarida)))}). Dosyayı yeniden seçin."
+            )
+        disarida = set(not_temizle) - set(bekleyen.get("not_temizlenebilir") or [])
+        if disarida:
+            raise depo.IsKuralHatasi(
+                "Notları temizlenmek üzere önizlemede sunulmayan kart seçildi "
                 f"(ID: {', '.join(map(str, sorted(disarida)))}). Dosyayı yeniden seçin."
             )
         # Excel'in uygulamanın gerisinde kaldığı kartlar için seçilen durumlar. Hangi
@@ -1314,7 +1330,7 @@ def yukle_onay():
             raise depo.IsKuralHatasi("Geçersiz durum seçimi. Dosyayı yeniden seçin.") from None
         sonuc = ex.excelden_aktar(yol, session["kullanici"], beklenen_surum=bekleyen["surum"],
                                  beklenen_kaynak_surum=bekleyen["kaynak_surum"], tamamlanan_sifirla=sifirla,
-                                 gerileme_secimleri=gerileme_secimleri)
+                                 gerileme_secimleri=gerileme_secimleri, notlari_temizle=not_temizle)
     except (depo.DepoHatasi, ex.ExcelAktarimHatasi, OSError) as hata:
         sorunlar = getattr(hata, "sorunlar", None) or [str(hata)]
         return render_template("import_onizleme.html", hata=str(hata), hata_turu="onay",

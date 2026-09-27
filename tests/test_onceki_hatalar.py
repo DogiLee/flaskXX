@@ -70,7 +70,7 @@ class OncekiHatalarTests(unittest.TestCase):
         self.assertEqual((pano[e['id']]['dizgi_kod'], pano[e['id']]['durum']), ('ELLE', 'TESLİM EDİLDİ'))
         self.assertIn(m['id'], monitor)                 # makine işi monitörde
         self.assertNotIn(e['id'], monitor)              # bitmiş elle iş monitörde değil
-        self.assertEqual(monitor[m['id']], 'PLANDA')
+        self.assertEqual(monitor[m['id']], 'SÜRESİ İÇİNDE')
         self.assertEqual(set(teslim), {f'{STOK}/ELLE'})  # teslim listesinde yalnız elle kısmı
         self.assertEqual((teslim[f'{STOK}/ELLE']['toplam_adet'], teslim[f'{STOK}/ELLE']['teslim']),
                          (2, '17.09.2026'))

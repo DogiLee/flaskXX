@@ -59,6 +59,10 @@ class TestPaketiTests(unittest.TestCase):
         depo.kart_bitir(self.kid("ELLE", 30), 2, "elle1", "operator", "elle_dizgi")
         depo.kart_baslat(self.kid("EUM", 11), 3, "eum1", "operator", "eum_dizgi")
         depo.kart_bitir(self.kid("EUM", 11), 1, "eum1", "operator", "eum_dizgi")
+        depo.kart_not_guncelle(self.kid("MAKINE", 18), "M18 eski notu", "makine1", "operator")
+        depo.kart_not_guncelle(self.kid("MAKINE", 16), "M16 notu", "makine1", "operator")
+        m29 = self.kart("MAKINE", 29)   # Excel'de DURUM boş; admin Durum Ata ile PLANA ALINDI
+        depo.admin_kart_duzenle(m29["id"], "PLANA ALINDI", 0, m29["toplam_adet"], None, "admin")
 
     def test_rehberdeki_akis(self):
         paket = paket_uret.uret(self.root / "paket")
@@ -78,7 +82,7 @@ class TestPaketiTests(unittest.TestCase):
         self.assertEqual(Counter((k["dizgi_kod"], k["durum"]) for k in gorunen if k["dizgi_kod"] == "MAKINE"),
                          Counter({("MAKINE", "PLANA ALINDI"): 14, ("MAKINE", "DİZGİDE"): 12, ("MAKINE", "TESLİM EDİLDİ"): 14}))
         rozetler = {no: self.kart("MAKINE", no)["rozet"] for no in (17, 18, 20, 21, 22, 23, 25, 26, 28)}
-        self.assertEqual(rozetler, {17: "BUGÜN BAŞLAMALI", 18: "BAŞLAMADI (+5 gün)", 20: "PLANINDA (5 gün var)",
+        self.assertEqual(rozetler, {17: "BUGÜN BAŞLAMALI", 18: "BAŞLAMADI (+5 gün)", 20: "SÜRESİ İÇİNDE (teslime 5 gün kaldı)",
                                     21: "SON GÜN", 22: "SON 1 GÜN", 23: "SÜRE AŞILDI (3 gün)",
                                     25: "ZAMANINDA TESLİM", 26: "GEÇ TESLİM (+3 gün)", 28: "TESLİM EDİLDİ"})
         self.assertEqual((self.kart("MAKINE", 35)["toplam_adet"], self.kart("MAKINE", 36)["toplam_adet"]), (1500, 12))
@@ -94,27 +98,41 @@ class TestPaketiTests(unittest.TestCase):
         self.operator_islemleri()
         onizleme = self.yukle(paket["02_GUNCELLEME"], onizleme=True)
         self.assertEqual((onizleme["yeni"], onizleme["guncellenen"], onizleme["pasife_alinan"],
-                          onizleme["ayrilan"], onizleme["gerileme"]), (5, 11, 3, 1, 6))
+                          onizleme["ayrilan"], onizleme["gerileme"], onizleme["durumsuz"], onizleme["uyari"]),
+                         (5, 13, 3, 1, 6, 3, 16))
         kararlar = {(d["sayfa"], d["sira"]): d["gerileme"]["onerilen"]
                     for d in onizleme["degisiklikler"] if d["tur"] == "gerileme"}
         self.assertEqual(kararlar, {("MAKINE", 24): "TESLİM EDİLDİ", ("MAKINE", 39): "TESLİM EDİLDİ",
                                     ("MAKINE", 40): "DİZGİDE", ("MAKINE", 41): "DİZGİDE",
-                                    ("ELLE", 22): "DİZGİDE", ("EUM", 11): "DİZGİDE"})
+                                    ("ELLE", 22): "DİZGİDE", ("EUM", 11): "DİZGİDE",
+                                    # Excel'de DURUM yok: admin atadıysa koru, Excel'den geldiyse durumsuz bırak
+                                    ("MAKINE", 29): "PLANA ALINDI", ("MAKINE", 45): None, ("ELLE", 26): None})
+        self.assertEqual({(k["source_sheet"], k["source_row_id"]) for k in depo._kartlar
+                          if k["id"] in onizleme["not_temizlenebilir"]}, {("MAKINE", "NO:18")})
         turler = Counter(d["tur"] for d in onizleme["degisiklikler"])
         self.assertEqual((turler["pasif"], turler["ayrildi"], turler["yeni"]), (3, 1, 5))
         sifirlanabilir = {(k["source_sheet"], k["source_row_id"]) for k in depo._kartlar
                           if k["id"] in onizleme["sifirlanabilir"]}
         self.assertIn(("MAKINE", "NO:20"), sifirlanabilir)
         secim = {self.kid(kod, no): durum for (kod, no), durum in kararlar.items()}
-        self.yukle(paket["02_GUNCELLEME"], gerileme_secimleri=secim,
-                   tamamlanan_sifirla=[self.kid("MAKINE", 20), self.kid("MAKINE", 41)])
+        sonuc = self.yukle(paket["02_GUNCELLEME"], gerileme_secimleri=secim,
+                           tamamlanan_sifirla=[self.kid("MAKINE", 20), self.kid("MAKINE", 41)],
+                           notlari_temizle=[self.kid("MAKINE", 18)])
+        self.assertEqual((sonuc["gerileme_korunan"], sonuc["durumsuz_korunan"], sonuc["sifirlanan"],
+                          sonuc["notu_temizlenen"]), (5, 1, 2, 1))
+        self.assertIsNone(self.kart("MAKINE", 18)["aciklama"])
+        self.assertIn("M16 notu", self.kart("MAKINE", 16)["aciklama"])
+        eksik = {(k["dizgi_kod"], k["sira"]) for k in depo.durumu_eksik_kartlari_getir()}
+        self.assertTrue({("MAKINE", 45), ("ELLE", 26)} <= eksik)
+        self.assertNotIn(("MAKINE", 29), eksik)
         beklenen = {("MAKINE", 16): ("PLANA ALINDI", 0), ("MAKINE", 18): ("DİZGİDE", 0), ("MAKINE", 20): ("DİZGİDE", 0),
                     ("MAKINE", 23): ("TESLİM EDİLDİ", 5), ("MAKINE", 24): ("TESLİM EDİLDİ", 12),
                     ("MAKINE", 36): ("PLANA ALINDI", 0), ("MAKINE", 37): ("DİZGİDE", 0),
                     ("MAKINE", 39): ("TESLİM EDİLDİ", 2), ("MAKINE", 40): ("DİZGİDE", 4), ("MAKINE", 41): ("DİZGİDE", 0),
                     ("MAKINE", 42): ("PLANA ALINDI", 0), ("ELLE", 21): ("DİZGİDE", 0), ("ELLE", 22): ("DİZGİDE", 0),
                     ("ELLE", 25): ("PLANA ALINDI", 0), ("EUM", 10): ("DİZGİDE", 0), ("EUM", 11): ("DİZGİDE", 1),
-                    ("EUM", 16): ("PLANA ALINDI", 0)}
+                    ("EUM", 16): ("PLANA ALINDI", 0), ("MAKINE", 29): ("PLANA ALINDI", 0),
+                    ("MAKINE", 45): (None, 0), ("ELLE", 26): (None, 0)}
         self.assertEqual({a: (self.kart(*a)["durum"], self.kart(*a)["tamamlanan_adet"]) for a in beklenen}, beklenen)
         self.assertEqual((self.kart("MAKINE", 36)["toplam_adet"], self.kart("MAKINE", 42)["talep_no"]), (15, "1909042"))
         eski42 = [k for k in depo._kartlar if k["source_row_id"].startswith("NO:42~")]
@@ -126,16 +144,16 @@ class TestPaketiTests(unittest.TestCase):
 
         # 3. adım: aynı dosya tekrar: yalnız hâlâ Excel'den ileride olan kartlar karar ister
         onizleme = self.yukle(paket["03_AYNI_DOSYA_TEKRAR"], onizleme=True)
-        self.assertEqual((onizleme["yeni"], onizleme["guncellenen"], onizleme["pasife_alinan"], onizleme["gerileme"]),
-                         (0, 0, 0, 5))
+        self.assertEqual((onizleme["yeni"], onizleme["guncellenen"], onizleme["pasife_alinan"], onizleme["gerileme"],
+                          onizleme["durumsuz"]), (0, 0, 0, 5, 1))
         secim = {d["id"]: d["gerileme"]["onerilen"] for d in onizleme["degisiklikler"] if d["tur"] == "gerileme"}
         self.yukle(paket["03_AYNI_DOSYA_TEKRAR"], gerileme_secimleri=secim)
 
         # 4. adım: Excel yetişti: karar yok, 5 kartın yalnız Excel durum metni değişir
         onizleme = self.yukle(paket["04_EXCEL_YETISTI"], onizleme=True)
-        self.assertEqual((onizleme["gerileme"], onizleme["guncellenen"], onizleme["yeni"], onizleme["pasife_alinan"]),
-                         (0, 5, 0, 0))
-        self.assertEqual({d["sira"] for d in onizleme["degisiklikler"]}, {24, 39, 40, 22, 11})
+        self.assertEqual((onizleme["gerileme"], onizleme["durumsuz"], onizleme["guncellenen"], onizleme["yeni"],
+                          onizleme["pasife_alinan"]), (0, 0, 6, 0, 0))
+        self.assertEqual({d["sira"] for d in onizleme["degisiklikler"]}, {24, 29, 39, 40, 22, 11})
         self.yukle(paket["04_EXCEL_YETISTI"], gerileme_secimleri={})
         once = [dict(k) for k in depo._kartlar]
 

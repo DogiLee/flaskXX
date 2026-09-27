@@ -71,3 +71,15 @@ Değişiklik öncesi dosyalar: `.investigation/frontend-fix-20260927-before/`, f
   Yeni JS `static/js/` altına, stil `stil.css`'e yazılmalı. `tests/test_frontend.py` bunu yakalar.
 - **Dağıtım:** `app.py` değiştiği için sunucunun yeniden başlatılması gerekir. Statik dosyalar otomatik sürümlü olduğundan
   tarayıcı önbelleği temizlemeye gerek yok.
+
+## Ek istekler (27.09.2026 akşam)
+
+| # | İstek | Yapılan |
+|---|---|---|
+| 1 | Logo | Üst çubukta (48px, telefonda 40px) ve giriş ekranında (120px) "PDGM" yazısı yerine `static/logo.png`. Not: dosya aslında JPEG (1079×1046), uzantısı `.png`; tarayıcılar içeriğe göre açtığı için sorun değil. |
+| 2 | Geciken rozeti | Pano başlığındaki "N geciken açık kart" kaldırıldı. |
+| 3 | KPI başlıkları | "Dizgideki İş Emri", "Plana Alınan İş Emri", "Teslim Edilen İş Emri" (16px başlık), altında "X farklı stok". Pano ve Operatör'de aynı. |
+| 4 | "20 / 35 kart gösteriliyor" | Hesap doğruydu: ilk sayı ekranda görünen (her bölüm sayfa başına 12 kart), ikincisi filtreye uyan toplam. Metin "35 kart bulundu · ekranda 20, sonraki sayfalarda 15" oldu. Üretim verisinde Tümü/Hepsi: 36 kart = 7 dizgide + 3 plana + 26 teslim; ekranda 7 + 3 + 12 = 22. |
+| 5 | "PLANINDA (3 gün var)" | "SÜRESİ İÇİNDE (teslime 3 gün kaldı)" oldu ("SÜRE AŞILDI (N gün)" ile karşıt). Monitörde kısa hâli "PLANDA" yerine "SÜRESİ İÇİNDE". Excel raporuna da yeni metin gider. Eski metni bekleyen testler, `docs/EXCEL_SYNC.md` ve test rehberi güncellendi. |
+
+Test: 112/112 (yeni `test_logo_kpi_basliklari_ve_rozet_metni`).

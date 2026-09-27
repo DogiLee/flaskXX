@@ -55,9 +55,9 @@ class UITests(unittest.TestCase):
         self.assertEqual(response.status_code,200)
         self.assertEqual({k['dizgi_kod'] for k in contexts[-1]['dizgide']+contexts[-1]['plana_alindi']},{'MAKINE'})
         html=response.get_data(as_text=True)
-        self.assertIn('>PLANDA<',html)
+        self.assertIn('>SÜRESİ İÇİNDE<',html)
         panel=client.get('/panel').get_data(as_text=True)
-        self.assertIn('PLANINDA (',panel)
+        self.assertIn('SÜRESİ İÇİNDE (teslime',panel)
         self.assertIn('HAND',panel); self.assertIn('EUM',panel)
         # KPI: ana sayı iş emri, farklı stok sayısı alt bilgi (frontend incelemesi #11).
         self.assertIn('data-kpi-filtre="DİZGİDE"',panel)

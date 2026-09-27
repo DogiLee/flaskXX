@@ -45,7 +45,7 @@ MAKINE = [
     dict(no=17, talep=1900017, adet="3 ADET", bas=0, tes=3, durum="PLANA ALINDI", not_="BUGÜN BAŞLAMALI rozeti"),
     dict(no=18, talep=1900018, adet="6 ADET", bas=-5, tes=2, durum="PLANA ALINDI", not_="BAŞLAMADI (+5 gün) rozeti"),
     dict(no=19, talep=1900019, adet="2 ADET", bas=14, tes=18, durum="plana alındı", not_="küçük harf DURUM normalizasyonu"),
-    dict(no=20, talep=1900020, adet="10 ADET", bas=-3, tes=5, durum="DİZGİDE", not_="PLANINDA; operatör kısmi adet girecek"),
+    dict(no=20, talep=1900020, adet="10 ADET", bas=-3, tes=5, durum="DİZGİDE", not_="SÜRESİ İÇİNDE; operatör kısmi adet girecek"),
     dict(no=21, talep=1900021, adet="2 ADET", bas=-2, tes=0, durum="DİZGİDE", not_="SON GÜN rozeti"),
     dict(no=22, talep=1900022, adet="3 ADET", bas=-4, tes=1, durum="DİZGİDE", not_="SON 1 GÜN rozeti"),
     dict(no=23, talep=1900023, adet="5 ADET", bas=-10, tes=-3, durum="DİZGİDE", not_="SÜRE AŞILDI (3 gün)"),
@@ -54,7 +54,7 @@ MAKINE = [
     dict(no=26, talep=1900026, adet="4 ADET", bas=-20, tes=-15, ger=-12, durum="TESLİM EDİLDİ", not_="GEÇ TESLİM (+3 gün)"),
     dict(no=27, talep=1900027, adet="1 ADET", bas=-10, tes=-8, ger=-8, durum="Teslim Edildi ", not_="yazım farkı + boşluk"),
     dict(no=28, talep=1900028, adet="2 ADET", bas=-9, tes=-6, durum="TESLİM EDİLDİ", not_="teslim tarihi boş uyarısı"),
-    dict(no=29, talep=1900029, adet="8 ADET", bas=None, tes=None, durum=None, not_="DURUM boş: durumu eksik listesi"),
+    dict(no=29, talep=1900029, adet="8 ADET", bas=None, tes=None, durum=None, not_="DURUM boş; 2. adımdan önce admin durum atar, Excel boş kalır"),
     dict(no=30, talep=1900030, adet="3 ADET", bas=5, tes=9, ger=-1, durum="PLANA ALINDI", not_="tarih dolu ama teslim değil uyarısı"),
     dict(no=31, talep=1900031, stok="AD-T031-0001", adet="3 ADET", bas=-15, tes=-10, ger=-10, durum="TESLİM EDİLDİ", not_="aynı Talep+Stok 1. parti"),
     dict(no=32, talep=1900031, stok="AD-T031-0001", adet="4 ADET", bas=-2, tes=4, durum="DİZGİDE", not_="aynı Talep+Stok 2. parti"),
@@ -70,7 +70,7 @@ MAKINE = [
     dict(no=42, talep=1900042, adet="3 ADET", bas=-1, tes=5, durum="DİZGİDE", not_="2. adımda NO başka talebe verilecek"),
     dict(no=43, talep=1900043, adet="2 ADET", bas=8, tes=12, durum="PLANA ALINDI", not_="2. adımda satır silinecek"),
     dict(no=44, talep=1900044, adet="2 ADET", bas=9, tes=13, durum="PLANA ALINDI", not_="2. adımda kalıntı bırakılarak silinecek"),
-    dict(no=45, talep=1900045, adet="7 ADET", bas=-3, tes=8, durum="DİZGİDE", pcb="VAR", not_="PCB bilgisi"),
+    dict(no=45, talep=1900045, adet="7 ADET", bas=-3, tes=8, durum="DİZGİDE", pcb="VAR", not_="PCB bilgisi; 2. adımda Excel'de DURUM silinecek"),
 ]
 ELDE = [
     dict(no=21, talep=1910021, adet="2 ADET", bas=2, tes=5, durum="DİZGİ İÇİN BEKLİYOR", not_="PLANA'ya iner; 2. adımda DİZGİDE"),
@@ -78,7 +78,7 @@ ELDE = [
     dict(no=23, talep=1910023, adet="4 ADET", bas=-3, tes=3, durum="DİZGİDE VE MALZEME BEKLENİYOR", not_="DİZGİDE + malzeme bekliyor"),
     dict(no=24, talep=1910024, adet="2 ADET", bas=-2, tes=4, durum="DİZGİDE VE MALZEME BEKLİYOR", not_="diğer yazım"),
     dict(no=25, talep=1910025, adet="5 ADET", bas=None, tes=None, durum="MALZEME TEDARİK", not_="durumsuz + malzeme; 2. adımda PLANA"),
-    dict(no=26, talep=1910026, adet="6 ADET", bas=-2, tes=3, durum="DİZGİDE", not_="elle dizgide"),
+    dict(no=26, talep=1910026, adet="6 ADET", bas=-2, tes=3, durum="DİZGİDE", not_="elle dizgide; 2. adımda Excel'de MALZEME TEDARİK"),
     dict(no=27, talep=1910027, adet="2 ADET", bas=-14, tes=-10, ger=-10, durum="TESLİM EDİLDİ", not_="elle teslim"),
     dict(no=28, talep=1900034, stok="AD-T034-0001", adet="2 ADET", bas=-6, tes=-3, ger=-3, durum="TESLİM EDİLDİ", not_="7 adetin 2 elle kısmı (bitmiş)"),
     dict(no=29, talep=1910029, adet="4 ADET", bas=1, tes=4, durum="DİZGİ İÇİN BEKLİYOR", not_="PLANA"),
@@ -220,7 +220,8 @@ def ilk_yukleme(bugun):
 
 def guncelleme(bugun):
     """2. adım: tarih/durum/adet değişiklikleri, yeni/silinen satırlar, NO'nun başka talebe
-    verilmesi, Excel'de geri alma, gizli DURUM sütunu, görünür yinelenen başlık."""
+    verilmesi, Excel'de geri alma, Excel'de DURUM'un boşaltılması, gizli DURUM sütunu,
+    görünür yinelenen başlık."""
     wb = ilk_yukleme(bugun)
     ws = wb["MAKİNE"]
     bul = lambda no: _satir_bul(ws, "C", no, 205)
@@ -231,6 +232,7 @@ def guncelleme(bugun):
     ws[f"J{bul(36)}"] = 15                                                 # adet değişikliği
     ws[f"Y{bul(37)}"] = "DİZGİDE"                                         # gizli satırda güncelleme
     ws[f"Y{bul(41)}"], ws[f"X{bul(41)}"] = "DİZGİDE", None                 # Excel'de geri alma
+    ws[f"Y{bul(45)}"] = None                                               # Excel'de DURUM silindi
     r42 = bul(42)                                                         # NO 42 yeni talebe verildi
     ws[f"D{r42}"], ws[f"I{r42}"], ws[f"J{r42}"], ws[f"Y{r42}"] = 1909042, "AD-T042-YENI", "5 ADET", "PLANA ALINDI"
     ws[f"U{r42}"], ws[f"W{r42}"] = _gun(bugun, 3), _gun(bugun, 8)
@@ -249,6 +251,7 @@ def guncelleme(bugun):
     bul = lambda no: _satir_bul(ws, "B", no, 3)
     ws[f"V{bul(21)}"] = "DİZGİDE"
     ws[f"V{bul(25)}"], ws[f"S{bul(25)}"], ws[f"T{bul(25)}"] = "DİZGİ İÇİN BEKLİYOR", _gun(bugun, 3), _gun(bugun, 6)
+    ws[f"V{bul(26)}"] = "MALZEME TEDARİK"                                  # iş akışı durumu olmayan metin
     for hucre in ws[bul(33)]:
         hucre.value = None
 
@@ -269,6 +272,7 @@ def excel_guncel(bugun):
     ws[f"Y{bul(24)}"], ws[f"X{bul(24)}"] = "TESLİM EDİLDİ", _gun(bugun, 0)
     ws[f"Y{bul(39)}"], ws[f"X{bul(39)}"] = "TESLİM EDİLDİ", _gun(bugun, 0)
     ws[f"Y{bul(40)}"] = "DİZGİDE"
+    ws[f"Y{bul(29)}"] = "PLANA ALINDI"          # admin'in atadığı durum Excel'e de yazıldı
     wb["ELDE DİZGİ"][f"V{_satir_bul(wb['ELDE DİZGİ'], 'B', 22, 3)}"] = "DİZGİDE"
     wb["EÜM"][f"W{_satir_bul(wb['EÜM'], 'B', 11, 3)}"] = "ÜRETİM DEVAM EDİYOR"
     return wb

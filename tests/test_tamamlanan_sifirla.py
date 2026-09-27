@@ -62,8 +62,8 @@ class TamamlananSifirlaTests(unittest.TestCase):
         self.assertEqual(korunan['tamamlanan_adet'], 3)                         # seçilmedi
         self.assertEqual((sifirlanan['durum'], sifirlanan['tamamlanan_adet'], sifirlanan['bitis_zamani'],
                           sifirlanan['baslangic_adet']), ('DİZGİDE', 0, None, 5))
-        self.assertTrue(sifirlanan['rozet'].startswith('PLANINDA'), sifirlanan['rozet'])  # "ÜRETİM BİTTİ" değil
-        self.assertEqual(korunan['rozet'].split(' (')[0], 'PLANINDA')
+        self.assertTrue(sifirlanan['rozet'].startswith('SÜRESİ İÇİNDE'), sifirlanan['rozet'])  # "ÜRETİM BİTTİ" değil
+        self.assertEqual(korunan['rozet'].split(' (')[0], 'SÜRESİ İÇİNDE')
         self.assertEqual(self.kart(idler[4])['tamamlanan_adet'], 2)            # dokunulmadı
         log = [l for l in depo._loglar if l['islem'] == 'EXCEL KART GÜNCELLENDİ' and f"ID={idler[2]} " in l['detay']]
         self.assertIn('"tamamlanan_adet": [5, 0]', log[-1]['detay'])

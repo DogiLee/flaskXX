@@ -168,6 +168,24 @@ class FrontendTests(unittest.TestCase):
         self.assertIn('Üretilen Adedi Gir', html)
         self.assertNotIn('Adet Bitir', html)
 
+    # --- 27.09 ek istekler: logo, geciken rozeti yok, KPI başlıkları, açıklayıcı rozet ----------
+    def test_logo_kpi_basliklari_ve_rozet_metni(self):
+        module, client = self.load_app()
+        yakin = (date.today() + timedelta(days=3)).isoformat()
+        gecmis = (date.today() - timedelta(days=5)).isoformat()
+        self.upload({'MAKİNE': [row(1, status='DİZGİDE', start=gecmis, end=yakin, stock='SUREDE'),
+                                row(2, status='DİZGİDE', start=gecmis, end=gecmis, stock='GECIKEN')]})
+        panel = self.html(client, '/panel')
+        giris = module.app.test_client().get('/giris').get_data(as_text=True)
+        for html in (panel, giris):
+            self.assertRegex(html, r'<img[^>]+src="/static/logo\.png\?v=\d+"[^>]+alt="PDGM"')
+            self.assertNotIn('marka-yazi', html)
+        self.assertNotIn('geciken açık kart', panel)
+        for baslik in ('Dizgideki İş Emri', 'Plana Alınan İş Emri', 'Teslim Edilen İş Emri'):
+            self.assertIn(f'<span>{baslik}</span>', panel)
+        self.assertIn('SÜRESİ İÇİNDE (teslime 3 gün kaldı)', panel)
+        self.assertIn('>SÜRESİ İÇİNDE<', self.html(client, '/monitor'))
+
     # --- #15: giriş sayfası geçerli HTML (formlar iç içe değil) --------------------------------
     def test_giris_formlari_ic_ice_degil(self):
         module, _ = self.load_app()

@@ -15,6 +15,19 @@
     {%- if excel_durum and excel_durum != durum -%}<small class="kaynak-metni">Excel: {{ excel_durum }}</small>{%- endif -%}
 {%- endmacro %}
 
+{% macro not_temizle_secenegi(k) -%}
+<div class="not-secenek">
+    <label class="sifirla-secenek">
+        <input type="checkbox" name="not_temizle" value="{{ k.id }}" form="onay-formu" data-not-temizle>
+        <span>
+            <strong>Notları temizle</strong>
+            <small>Eski notlar yeni duruma taşınmasın istiyorsanız işaretleyin; işaretlemezseniz korunur. Silinen notlar işlem loguna yazılır.</small>
+        </span>
+    </label>
+    <p class="not-metni" aria-label="Kartın mevcut notları">{{ k.aciklama }}</p>
+</div>
+{%- endmacro %}
+
 {% block content %}
 <div class="sayfa-shell onizleme-sayfa">
 {% if hata %}
@@ -60,6 +73,9 @@
     {% set geri_gelenler = d|selectattr("tur", "equalto", "geri")|list %}
     {% set ayrilanlar = d|selectattr("tur", "equalto", "ayrildi")|list %}
     {% set gerilenler = d|selectattr("tur", "equalto", "gerileme")|list %}
+    {% set durumsuzlar = gerilenler|selectattr("gerileme.karar_turu", "equalto", "durumsuz")|list %}
+    {% set geride_kalanlar = gerilenler|rejectattr("gerileme.karar_turu", "equalto", "durumsuz")|list %}
+    {% set not_temizlenebilirler = d|selectattr("not_temizlenebilir")|list %}
     {% set pasiflesecek = (sonuc.pasife_alinan or 0) + (sonuc.ayrilan or 0) %}
     {% set eksik_sayfalar = (r.sayfalar or [])|selectattr("bulunamadi")|list %}
     {% set toplu_pasif = sonuc.pasife_alinan and sonuc.mevcut_aktif and sonuc.pasife_alinan * 10 >= sonuc.mevcut_aktif * 3 %}
@@ -77,7 +93,8 @@
 
     {% if gerilenler %}
     <a class="bildirim uyari karar-bandi" href="#karar-gerekiyor">
-        <strong>{{ gerilenler|length }} kartta Excel uygulamanın gerisinde.</strong>
+        {% if geride_kalanlar %}<strong>{{ geride_kalanlar|length }} kartta Excel uygulamanın gerisinde.</strong>{% endif %}
+        {% if durumsuzlar %}<strong>{{ durumsuzlar|length }} kartta Excel'de DURUM boş, uygulamada ise bir durum var.</strong>{% endif %}
         Onaylamadan önce bu kartların hangi durumda kalacağını seçin ↓
     </a>
     {% endif %}
@@ -122,8 +139,12 @@
         <div class="panel-baslik">
             <div>
                 <p class="ust-etiket">KARAR GEREKİYOR · {{ gerilenler|length }} KART</p>
-                <h2>Excel'in uygulamanın gerisinde kaldığı kartlar</h2>
-                <p class="panel-aciklama">Bu kartlarda Excel, uygulamadaki durumdan daha geri bir durum söylüyor (ör. operatör kartı dizgiye almış ama Excel hâlâ PLANA ALINDI diyor). Her kart için onaydan sonraki durumu seçin. Önerilen seçim: kart uygulamada operatör tarafından ilerletildiyse uygulamadaki durum korunur; durum yalnız Excel'den geldiyse Excel'e uyulur.</p>
+                <h2>{% if geride_kalanlar and durumsuzlar %}Excel'in geride kaldığı veya DURUM'u boş bıraktığı kartlar{% elif durumsuzlar %}Excel'de DURUM'u boş olan kartlar{% else %}Excel'in uygulamanın gerisinde kaldığı kartlar{% endif %}</h2>
+                <p class="panel-aciklama">
+                    {% if geride_kalanlar %}Excel, uygulamadaki durumdan daha geri bir durum söylüyor olabilir (ör. operatör kartı dizgiye almış ama Excel hâlâ PLANA ALINDI diyor).{% endif %}
+                    {% if durumsuzlar %}Excel'de DURUM boş ya da MALZEME TEDARİK / PDGM ÖNERİ gibi bir iş akışı durumu olmayan bir metin olabilir; kart durumsuz bırakılırsa Pano, Operatör ve Monitör'den kalkar ve Durumu Eksik Kartlar listesine düşer.{% endif %}
+                    Her kart için onaydan sonraki durumu seçin. Önerilen seçim: durum uygulamada verildiyse (operatör ilerletti veya admin atadı) uygulamadaki durum korunur; durum Excel'den geldiyse Excel'e uyulur.
+                </p>
             </div>
             {% if gerilenler|length > 1 %}
             <div class="buton-grup">
@@ -148,17 +169,27 @@
                     </div>
                     <div>
                         <span>Excel'de</span>
+                        {% if g.karar_turu == "durumsuz" %}
+                        <span class="durum-rozet kotu">{{ k.excel_durum or "DURUM boş" }}</span>
+                        <small>İş akışı durumu değil.</small>
+                        {% else %}
                         {{ durum_rozeti(g.excel_durum, k.excel_durum) }}
+                        {% endif %}
                         {% if g.onceki_excel_durum %}<small>Önceki yüklemede Excel: {{ g.onceki_excel_durum }}</small>{% endif %}
                     </div>
                 </div>
-                <p class="karar-neden">{% if g.uygulamada %}Kart uygulamada ilerletilmiş; Excel henüz güncellenmemiş olabilir.{% else %}Bu durum daha önce Excel'den gelmişti; Excel'de geri alınmış görünüyor.{% endif %}</p>
+                <p class="karar-neden">
+                    {%- if g.karar_turu == "durumsuz" -%}
+                        {% if g.uygulamada %}Durum uygulamada verilmiş (operatör işlemi veya admin ataması); Excel bu kart için durum söylemiyor.{% else %}Bu durum daha önce Excel'den gelmişti; {% if k.excel_durum %}Excel'deki yeni DURUM bir iş akışı durumu değil.{% else %}Excel'de DURUM silinmiş görünüyor.{% endif %}{% endif %}
+                    {%- elif g.uygulamada -%}Kart uygulamada ilerletilmiş; Excel henüz güncellenmemiş olabilir.
+                    {%- else -%}Bu durum daha önce Excel'den gelmişti; Excel'de geri alınmış görünüyor.{%- endif -%}
+                </p>
                 <label class="karar-secim">
                     <span>Onaydan sonraki durum</span>
                     <select name="gerileme_{{ k.id }}" form="onay-formu" data-gerileme-secim
-                            data-excel="{{ g.excel_durum }}" data-uygulama="{{ g.uygulama_durum }}">
+                            data-excel="{{ g.excel_durum or '' }}" data-uygulama="{{ g.uygulama_durum }}">
                         {% for s in g.secenekler %}
-                        <option value="{{ s }}"{% if s == g.onerilen %} selected{% endif %}>{{ s }}{% if s == g.excel_durum %} · Excel'deki{% elif s == g.uygulama_durum %} · uygulamadaki{% endif %}{% if s == g.onerilen %} (önerilen){% endif %}</option>
+                        <option value="{{ s or '' }}"{% if s == g.onerilen %} selected{% endif %}>{{ s or "Durumsuz bırak" }}{% if s == g.excel_durum %} · Excel'deki{% elif s == g.uygulama_durum %} · uygulamadaki{% endif %}{% if s == g.onerilen %} (önerilen){% endif %}</option>
                         {% endfor %}
                     </select>
                 </label>
@@ -172,6 +203,7 @@
                     </span>
                 </label>
                 {% endif %}
+                {% if k.not_temizlenebilir %}{{ not_temizle_secenegi(k) }}{% endif %}
                 {% set diger = k.farklar|rejectattr("anahtar", "in", ["source_active", "durum", "tamamlanan_adet"])|list %}
                 {% if diger %}
                 <details class="acilir karar-diger">
@@ -281,7 +313,7 @@
             <div>
                 <p class="ust-etiket">{{ 3 if (r.uyari_gruplari or atlanan) else 2 }} · KARTLARA ETKİSİ</p>
                 <h2>Onaylarsanız değişecek kartlar</h2>
-                <p class="panel-aciklama">Excel ana kaynaktır: tarih, adet ve geçerli DURUM Excel'deki değere çekilir. Operatör notları, gizlenen kartlar ve elle eklenen kartlar korunur.</p>
+                <p class="panel-aciklama">Excel ana kaynaktır: tarih, adet ve geçerli DURUM Excel'deki değere çekilir. Gizlenen ve elle eklenen kartlar korunur; operatör notları da siz "Notları temizle" demedikçe korunur.</p>
             </div>
         </div>
 
@@ -347,6 +379,15 @@
                 {% endif %}
             </div>
             {% endif %}
+            {% set notlular = grup|selectattr("not_temizlenebilir")|list %}
+            {% if notlular %}
+            <div class="sifirla-bilgi not-bilgi">
+                <p><strong>Notlar korunacak:</strong> {{ notlular|length }} kartın durumu bu aktarımla değişiyor ve kartta operatör/admin notu var. Notlar eski duruma aitse kartın altındaki "Notları temizle" kutusunu işaretleyin; silinen not metni işlem loguna yazılır.</p>
+                {% if notlular|length > 1 %}
+                <button type="button" class="buton buton-hayalet buton-kucuk" data-hepsini-sec="not">Tümünü işaretle</button>
+                {% endif %}
+            </div>
+            {% endif %}
             <div class="fark-listesi">
                 {% for k in grup %}
                 <article class="fark-karti">
@@ -378,6 +419,7 @@
                         </span>
                     </label>
                     {% endif %}
+                    {% if k.not_temizlenebilir %}{{ not_temizle_secenegi(k) }}{% endif %}
                 </article>
                 {% endfor %}
             </div>
@@ -417,8 +459,9 @@
         <ul>
             <li>Önce kart, işlem logu ve yükleme geçmişi dosyalarının yedeği alınır.</li>
             <li>Değişiklikler tek seferde uygulanır; bir hata olursa hiçbiri uygulanmaz.</li>
-            <li>Excel'de boş bırakılan tarih, kartta da temizlenir. DURUM boş ya da MALZEME TEDARİK / PDGM ÖNERİ ise kartın mevcut iş akışı korunur; tanınmayan DURUM aktarımı durdurur.</li>
-            <li>Tamamlanan adet: PLANA ALINDI olan kartta 0'a, TESLİM EDİLDİ olan kartta toplam adede kendiliğinden eşitlenir. DİZGİDE kalan kartta korunur; yalnız işaretlediğiniz kartlarda sıfırlanır.</li>
+            <li>Excel'de boş bırakılan tarih, kartta da temizlenir. DURUM boş ya da MALZEME TEDARİK / PDGM ÖNERİ ise yeni kart durumsuz oluşur; durumu olan kartta yukarıdaki kararınız uygulanır. Tanınmayan DURUM aktarımı durdurur.</li>
+            <li>Tamamlanan adet: PLANA ALINDI olan veya durumsuz bırakılan kartta 0'a, TESLİM EDİLDİ olan kartta toplam adede kendiliğinden eşitlenir. DİZGİDE kalan kartta korunur; yalnız işaretlediğiniz kartlarda sıfırlanır.</li>
+            <li>Notlar korunur; yalnız "Notları temizle" işaretlediğiniz kartlarda silinir ve silinen metin işlem loguna yazılır.</li>
             <li>Bu sayfa açıkken dosya veya kartlar değişirse aktarım uygulanmaz ve yeni önizleme istenir.</li>
         </ul>
     </section>
@@ -426,7 +469,7 @@
     <div class="onizleme-aksiyon">
         <p>
             <strong>{{ sonuc.yeni }} yeni · {{ guncellenen }} güncelleme · {{ pasiflesecek }} pasifleşme</strong>
-            <span>Onaylayana kadar hiçbir kayıt değişmez.{% if gerilenler %}<b data-gerileme-ozet> · <a href="#karar-gerekiyor">{{ gerilenler|length }} kart için durum kararı</a>: <i>0</i> kartta uygulamadaki durum korunacak.</b>{% endif %}<b data-sifirla-ozet hidden> · <i>0</i> kartta tamamlanan adet sıfırlanacak.</b></span>
+            <span>Onaylayana kadar hiçbir kayıt değişmez.{% if gerilenler %}<b data-gerileme-ozet> · <a href="#karar-gerekiyor">{{ gerilenler|length }} kart için durum kararı</a>: <i>0</i> kartta uygulamadaki durum korunacak.</b>{% endif %}<b data-sifirla-ozet hidden> · <i>0</i> kartta tamamlanan adet sıfırlanacak.</b>{% if not_temizlenebilirler %}<b data-not-ozet hidden> · <i>0</i> kartta notlar temizlenecek.</b>{% endif %}</span>
         </p>
         <div class="buton-grup">
             <a class="buton buton-hayalet" href="{{ url_for('yonetim') }}">Vazgeç</a>

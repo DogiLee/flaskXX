@@ -21,7 +21,7 @@
    Tıklanınca o durumun filtresini seçer. Dizgi tipi filtresine göre sayılar JS ile değişir. #}
 {% macro kpi_karti(sayac, anahtar, durum, sinif, baslik) -%}
 <button type="button" class="istatistik istatistik-buton {{ sinif }}" data-kpi-filtre="{{ durum }}"
-        aria-pressed="false" title="{{ baslik }} kartlarını listele"
+        aria-pressed="false" title="Yalnız {{ durum }} kartlarını listele"
         data-kart-hepsi="{{ sayac[anahtar ~ '_kart'] }}"
         data-kart-makine="{{ sayac[anahtar ~ '_kart_makine'] }}"
         data-kart-elle="{{ sayac[anahtar ~ '_kart_elle'] }}"
@@ -32,15 +32,15 @@
         data-stok-eum="{{ sayac[anahtar ~ '_eum'] }}">
     <span>{{ baslik }}</span>
     <strong data-kpi-kart>{{ sayac[anahtar ~ '_kart'] }}</strong>
-    <small>iş emri · <b data-kpi-stok>{{ sayac[anahtar] }}</b> farklı stok</small>
+    <small><b data-kpi-stok>{{ sayac[anahtar] }}</b> farklı stok</small>
 </button>
 {%- endmacro %}
 
 {% macro kpi_satiri(sayac) -%}
 <section class="istatistik-grid istatistik-grid-3" aria-label="İş durumu özeti">
-    {{ kpi_karti(sayac, "dizgide", "DİZGİDE", "kart-dizgide", "Dizgide") }}
-    {{ kpi_karti(sayac, "plana_alindi", "PLANA ALINDI", "kart-plana", "Plana Alındı") }}
-    {{ kpi_karti(sayac, "teslim", "TESLİM EDİLDİ", "kart-teslim", "Teslim Edildi") }}
+    {{ kpi_karti(sayac, "dizgide", "DİZGİDE", "kart-dizgide", "Dizgideki İş Emri") }}
+    {{ kpi_karti(sayac, "plana_alindi", "PLANA ALINDI", "kart-plana", "Plana Alınan İş Emri") }}
+    {{ kpi_karti(sayac, "teslim", "TESLİM EDİLDİ", "kart-teslim", "Teslim Edilen İş Emri") }}
 </section>
 {%- endmacro %}
 

@@ -167,29 +167,20 @@ textarea:focus-visible {
     text-decoration: none;
 }
 
-.marka-isaret {
-    width: 72px;
-    height: 52px;
-    padding: 3px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+/* Logo kare değil (1079×1046); kutuyu doldurur, taşan kenar kırpılır. */
+.marka-logo {
+    display: block;
+    width: 48px;
+    height: 48px;
     flex-shrink: 0;
+    object-fit: cover;
+    border-radius: 10px;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, .14);
 }
 
 .marka-metin {
     display: grid;
     gap: 2px;
-}
-
-.marka-yazi {
-    color: #176b55;
-    font-size: 20px;
-    letter-spacing: .04em;
-}
-
-.ust-cubuk .marka-yazi {
-    color: #cceae1;
 }
 
 .ana-nav {
@@ -637,6 +628,16 @@ textarea {
 .istatistik-buton:hover {
     transform: translateY(-2px);
     box-shadow: var(--golge-kuvvetli);
+}
+
+.istatistik-buton > span {
+    color: var(--yazi);
+    font-size: 16px;
+    font-weight: 800;
+}
+
+.istatistik-buton > small {
+    font-size: var(--yazi-md);
 }
 
 .istatistik-buton[aria-pressed="true"] {
@@ -1924,16 +1925,18 @@ tbody tr:hover {
 }
 
 .giris-logo {
-    width: 170px;
-    height: 92px;
-    margin: 0 auto 16px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    width: 120px;
+    height: 120px;
+    margin: 0 auto 18px;
 }
 
-.giris-logo .marka-yazi {
-    font-size: 32px;
+.giris-logo img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 24px;
+    box-shadow: 0 12px 30px rgba(15, 32, 39, .28);
 }
 
 .giris-kutu h1 {
@@ -2189,13 +2192,9 @@ tbody tr:hover {
         gap: 10px;
     }
 
-    .marka-isaret {
-        width: 44px;
+    .marka-logo {
+        width: 40px;
         height: 40px;
-    }
-
-    .marka-isaret .marka-yazi {
-        font-size: 14px;
     }
 
     .panel-kutu,
@@ -2258,8 +2257,8 @@ tbody tr:hover {
     }
 
     .giris-logo {
-        width: 145px;
-        height: 80px;
+        width: 96px;
+        height: 96px;
     }
 
     .monitor-zaman span {
@@ -2830,6 +2829,42 @@ tbody tr:hover {
     background: rgba(255, 255, 255, .08);
     color: #fff;
     border-color: rgba(255, 255, 255, .18);
+}
+
+/* Durumu değişen kartta "Notları temizle" seçeneği ve temizlenecek not metni */
+.not-bilgi {
+    border-color: var(--cizgi);
+    background: var(--notr-bg);
+}
+
+.not-bilgi p {
+    color: var(--notr);
+}
+
+.not-secenek {
+    border-top: 1px solid var(--cizgi-acik);
+}
+
+.not-secenek .sifirla-secenek {
+    border-top: 0;
+}
+
+.not-metni {
+    max-height: 7.5em;
+    overflow: auto;
+    margin: 0 12px 10px 40px;
+    padding: 6px 10px;
+    border-left: 3px solid var(--cizgi);
+    background: var(--zemin-2);
+    color: var(--soluk);
+    font-size: var(--yazi-xs);
+    line-height: 1.5;
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+}
+
+.not-secenek:has(input:checked) .not-metni {
+    text-decoration: line-through;
 }
 
 @media (max-width: 1100px) {

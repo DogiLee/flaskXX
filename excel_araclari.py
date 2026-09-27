@@ -166,7 +166,7 @@ MALZEME_BEKLEYEN_DURUMLAR = {
 }
 
 # Bilerek iş akışı durumuna eşlenmeyen kaynak durumları: kart durumsuz kalır
-# (mevcut kartta iş akışı korunur). Bunların dışındaki tanınmayan her DURUM
+# (durumu olan mevcut kart için önizlemede admin kararı istenir). Bunların dışındaki tanınmayan her DURUM
 # importu durdurur; aksi halde kart eski durumunda kalıp yanlış görünür
 # (ör. Excel "TESLİM EDİLDİ (KISMİ)" derken monitörde "PLANDA").
 DURUMSUZ_DURUMLAR = {"MALZEME TEDARIK", "PDGM ONERI"}
@@ -798,13 +798,15 @@ UYARI_TURLERI = {
     "durum_bos": (
         "DURUM boş",
         "Yeni kart durumsuz oluşturulur ve Pano, Operatör ve Monitör ekranlarında görünmez; "
-        "Yönetim ekranındaki \"Durumu eksik kartlar\" bölümünden durum atanabilir. Kart zaten "
-        "sistemdeyse mevcut iş akışı ve adetleri korunur.",
+        "Yönetim ekranındaki \"Durumu eksik kartlar\" bölümünden durum atanabilir. Kart sistemde "
+        "bir durumla duruyorsa \"Karar gerekiyor\" bölümünde durumsuz bırakmak ile mevcut durumu "
+        "korumak arasında seçim yaparsınız.",
     ),
     "durum_durumsuz": (
         "DURUM \"{deger}\": iş akışı durumu atanmaz",
         "Bu aşama (malzeme tedariği, PDGM önerisi) bilerek PLANA ALINDI / DİZGİDE / TESLİM EDİLDİ'ye "
-        "eşlenmez; sonuç DURUM boş ile aynıdır. Excel'deki metin kartta kaynak durumu olarak saklanır.",
+        "eşlenmez; sonuç DURUM boş ile aynıdır (durumu olan kart için karar istenir). Excel'deki "
+        "metin kartta kaynak durumu olarak saklanır.",
     ),
     "teslim_tarihsiz": (
         "TESLİM EDİLDİ ama Gerçekleşen Teslim T. boş",
@@ -1078,11 +1080,11 @@ def _sayfa_satirlarini_coz(ws, sayfa_adi, dizgi_tipi, anahtar_gruplari, parsed_l
         ilk_durum, durum_uyarisi = durum_coz(excel_durum_raw)
         if durum_uyarisi:
             if _bos_mu(excel_durum_raw):
-                uyar("durum_bos", "DURUM boş; yeni kartın durumu boş kalır, mevcut kartın iş akışı korunur.")
+                uyar("durum_bos", "DURUM boş; yeni kartın durumu boş kalır, durumu olan mevcut kart için karar istenir.")
             else:
                 uyar("durum_durumsuz",
                      f"DURUM '{str(excel_durum_raw).strip()}' bilerek bir iş akışı durumuna eşlenmez; "
-                     "yeni kartın durumu boş kalır, mevcut kartın iş akışı korunur.",
+                     "yeni kartın durumu boş kalır, durumu olan mevcut kart için karar istenir.",
                      ek=str(excel_durum_raw).strip())
 
         if ilk_durum == depo.TESLIM_EDILDI and not gerceklesen:
@@ -1135,10 +1137,10 @@ def _sayfa_satirlarini_coz(ws, sayfa_adi, dizgi_tipi, anahtar_gruplari, parsed_l
 
 
 def excelden_aktar(dosya_yolu, kullanici, onizleme=False, beklenen_surum=None, beklenen_kaynak_surum=None,
-                   tamamlanan_sifirla=None, gerileme_secimleri=None):
+                   tamamlanan_sifirla=None, gerileme_secimleri=None, notlari_temizle=None):
     with _import_kilidi:
         return _excelden_aktar(dosya_yolu, kullanici, onizleme, beklenen_surum, beklenen_kaynak_surum,
-                               tamamlanan_sifirla, gerileme_secimleri)
+                               tamamlanan_sifirla, gerileme_secimleri, notlari_temizle)
 
 
 def _sayfa_bul(wb, sayfa_adi):
@@ -1148,7 +1150,7 @@ def _sayfa_bul(wb, sayfa_adi):
 
 
 def _excelden_aktar(dosya_yolu, kullanici, onizleme=False, beklenen_surum=None, beklenen_kaynak_surum=None,
-                    tamamlanan_sifirla=None, gerileme_secimleri=None):
+                    tamamlanan_sifirla=None, gerileme_secimleri=None, notlari_temizle=None):
     snapshot_yolu = None
     wb = None
 
@@ -1225,6 +1227,11 @@ def _excelden_aktar(dosya_yolu, kullanici, onizleme=False, beklenen_surum=None, 
         secenekler["tamamlanan_sifirla"] = tamamlanan_sifirla
     if gerileme_secimleri is not None:
         secenekler["gerileme_secimleri"] = gerileme_secimleri
+    if notlari_temizle:
+        secenekler["notlari_temizle"] = notlari_temizle
+    # Kartta saklı eski DURUM metninin iş akışı karşılığı: boş DURUM kararında
+    # kartın durumunun Excel'den mi uygulamadan mı geldiğini ayırt eder.
+    secenekler["kaynak_durum_coz"] = lambda metin: durum_coz(metin)[0]
     sonuc = uygula(
         dosya_adi=os.path.basename(dosya_yolu),
         kullanici=kullanici,

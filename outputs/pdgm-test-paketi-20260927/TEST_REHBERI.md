@@ -65,7 +65,7 @@ Uyguladıktan sonra:
 |---|---|
 | M 17 | BUGÜN BAŞLAMALI |
 | M 18 | BAŞLAMADI (+5 gün) |
-| M 20 | PLANINDA (5 gün var); monitörde "PLANDA" |
+| M 20 | SÜRESİ İÇİNDE (teslime 5 gün kaldı); monitörde "SÜRESİ İÇİNDE" |
 | M 21 / M 22 | SON GÜN / SON 1 GÜN |
 | M 23 | SÜRE AŞILDI (3 gün) |
 | M 25 / M 26 | ZAMANINDA TESLİM / GEÇ TESLİM (+3 gün) |
@@ -115,16 +115,25 @@ Uyguladıktan sonra:
 | elle1 | E 22 (1910022) | **Dizgiye Al** (3 adet) |
 | elle1 | E 30 (1910030) | Üretilen Adedi Gir: 2 |
 | eum1 | Ü 11 (1920011) | **Dizgiye Al** (3 adet) → Üretilen Adedi Gir: 1 |
+| makine1 | M 18 (1900018) | Not Ekle: "M18 eski notu" |
+| makine1 | M 16 (1900016) | Not Ekle: "M16 notu" |
+| admin | M 29 (1900029) | Yönetim → Durumu Eksik Kartlar → **Durum Ata** → PLANA ALINDI (Excel'de DURUM boş kalıyor) |
 
+- [ ] M 29 Durumu Eksik listesinden çıkar ve Pano'da Plana Alınan İşler'de görünür.
 - [ ] `makine1` ile Elle ve EÜM kartlarında işlem düğmesi çıkmaz; yerinde "… operatörüne ait" etiketi görünür. Yalnız **Not Ekle** kullanılabilir. `elle1` ve `eum1` için de aynısı geçerlidir.
 
 Sonra admin ile `02_GUNCELLEME.xlsx` → **Etkiyi Önizle**. Bu dosyada iki şey bilerek değiştirildi; ikisi de sonucu bozmamalı:
 - MAKİNE sayfasında **DURUM sütunu gizli**.
 - Gizli sipariş bloğundaki ikinci "Planlanan Teslim T." sütunu (O) **görünür** ve içinde farklı tarihler var.
 
-- [ ] Üstte sarı bant: "**6 kartta** Excel uygulamanın gerisinde."
-- [ ] Kutular: Yeni **5**, Güncellenecek **11**, Değişmeyecek **88**, Pasifleşecek **4**, Veri uyarısı **14**.
-- [ ] **KARAR GEREKİYOR · 6 KART** bölümündeki önerilen seçimler:
+Ayrıca Excel'de DURUM'u boşalan kartlar var:
+- M 45'in DURUM hücresi silindi (uygulamada DİZGİDE).
+- E 26'nın DURUM'u "MALZEME TEDARİK" yapıldı; bu bir iş akışı durumu değildir (uygulamada DİZGİDE).
+- M 29'da DURUM hâlâ boş; yukarıda admin PLANA ALINDI atadı.
+
+- [ ] Üstte sarı bant: "**6 kartta** Excel uygulamanın gerisinde." ve "**3 kartta** Excel'de DURUM boş, uygulamada ise bir durum var."
+- [ ] Kutular: Yeni **5**, Güncellenecek **13**, Değişmeyecek **86**, Pasifleşecek **4**, Veri uyarısı **16**.
+- [ ] **KARAR GEREKİYOR · 9 KART** bölümündeki önerilen seçimler:
 
 | Kart | Uygulamada | Excel'de | Önerilen | Gerekçe metni |
 |---|---|---|---|---|
@@ -134,7 +143,11 @@ Sonra admin ile `02_GUNCELLEME.xlsx` → **Etkiyi Önizle**. Bu dosyada iki şey
 | M 41 | TESLİM EDİLDİ | DİZGİDE | **DİZGİDE** | …Excel'de geri alınmış görünüyor. |
 | E 22 | DİZGİDE | PLANA ALINDI (Excel metni: DİZGİ İÇİN BEKLİYOR) | DİZGİDE | Kart uygulamada ilerletilmiş… |
 | Ü 11 | DİZGİDE 1/3 | PLANA ALINDI (Excel metni: ÜRETİM PLANA ALINDI) | DİZGİDE | Kart uygulamada ilerletilmiş… |
+| M 29 | PLANA ALINDI | **DURUM boş** | PLANA ALINDI · uygulamadaki | Durum uygulamada verilmiş (operatör işlemi veya admin ataması)… |
+| M 45 | DİZGİDE | **DURUM boş** | **Durumsuz bırak** · Excel'deki | …Excel'de DURUM silinmiş görünüyor. |
+| E 26 | DİZGİDE | **MALZEME TEDARİK** ("İş akışı durumu değil.") | **Durumsuz bırak** · Excel'deki | …Excel'deki yeni DURUM bir iş akışı durumu değil. |
 
+- [ ] M 45'te "Durumsuz bırak" seçiliyken altında şu yazar: "Kart durumsuz kalır: Pano, Operatör ve Monitör'den kalkar, Yönetim'deki Durumu Eksik Kartlar listesine düşer…". DİZGİDE seçince açıklama değişir; sonra tekrar **Durumsuz bırak** seçin.
 - [ ] M 40'ta durumu **PLANA ALINDI** yapın:
   - Açıklama "Kart plana döner: tamamlanan adet 0 olur…" olarak değişir.
   - "Tamamlanan adedi sıfırla" kutusu devre dışı kalır.
@@ -158,22 +171,32 @@ Sonra admin ile `02_GUNCELLEME.xlsx` → **Etkiyi Önizle**. Bu dosyada iki şey
 
   Tarihler W sütunundan okunur; görünür hale gelen O sütunundaki farklı tarihler okunmaz.
 - [ ] M 20 kartının altında "Tamamlanan adedi sıfırla" kutusu var ("Şu an 3 / 10"). Kutuyu **işaretleyin**.
+- [ ] **Notlar:**
+  - Grubun üstünde "Notlar korunacak: 1 kartın durumu bu aktarımla değişiyor…" bilgisi var.
+  - M 18 kartının altında **Notları temizle** kutusu ve kartın mevcut notu ("M18 eski notu") görünür. Kutuyu **işaretleyin**; not metninin üstü çizilir.
+  - M 16'da kutu **yok**: notu var ama yalnız tarihi değişiyor, durumu değişmiyor.
 - [ ] **NO'su başka talebe verilmiş** (1 kart): M 42'nin eski talebi 1900042, yenisi **1909042 · AD-T042-YENI**.
 - [ ] **Pasifleşecek** (3 kart): M 43 (satır tamamen silindi), M 44 (satırda yalnız NO, sorumlu ve stok kaldı), E 33.
 - [ ] Kart sayılmayan satırlar listesine MAKİNE satır **310** (M 44'ün kalıntısı) eklendi.
 - [ ] **Yeni** (5 kart): M 42 (1909042), M 46, M 47, M 48, Ü 26.
-- [ ] Onay çubuğunda şu yazar: "6 kart için durum kararı: **5** kartta uygulamadaki durum korunacak · **2** kartta tamamlanan adet sıfırlanacak."
+- [ ] Onay çubuğunda şu yazar: "9 kart için durum kararı: **6** kartta uygulamadaki durum korunacak · **2** kartta tamamlanan adet sıfırlanacak · **1** kartta notlar temizlenecek."
 - [ ] **Değişiklikleri uygula**. Bildirim şunları içermeli:
   - "1 kartın NO'su Excel'de başka talebe verilmiş…"
   - "6 kartta Excel uygulamanın gerisindeydi; 5 kartta uygulamadaki durum korundu."
+  - "3 kartta Excel'de DURUM boştu; 1 kartta uygulamadaki durum korundu, 2 kart durumsuz bırakıldı (Durumu Eksik Kartlar)."
   - "2 kartın tamamlanan adedi seçiminizle sıfırlandı."
+  - "1 kartın notları seçiminizle temizlendi; silinen notlar işlem logunda."
 
 Uyguladıktan sonra beklenen durumlar:
 
 | Kart | Durum | Tamamlanan / Toplam |
 |---|---|---|
-| M 16 | PLANA ALINDI (yeni plan teslim tarihiyle) | 0 / 4 |
-| M 18, M 37 | DİZGİDE | 0 |
+| M 16 | PLANA ALINDI (yeni plan teslim tarihiyle); "M16 notu" duruyor | 0 / 4 |
+| M 18 | DİZGİDE; **notu yok** (temizlendi) | 0 |
+| M 37 | DİZGİDE | 0 |
+| M 29 | PLANA ALINDI (uygulamadaki korundu) | 0 / 8 |
+| M 45 | **durumsuz**: Pano, Operatör ve Monitör'de yok | 0 / 7 |
+| E 26 | **durumsuz**, Malzeme Bekliyor | 0 / 6 |
 | M 20 | DİZGİDE | **0** / 10 (sıfırlandı) |
 | M 23 | TESLİM EDİLDİ, GEÇ TESLİM (+2 gün) | 5 / 5 |
 | M 24, M 39 | TESLİM EDİLDİ, ZAMANINDA TESLİM (uygulamadaki bugünkü teslim tarihi korundu) | 12/12, 2/2 |
@@ -193,16 +216,20 @@ Uyguladıktan sonra beklenen durumlar:
   - 1910033
 - [ ] Kartlar tablosunda bu 4 kartın altında "Kaynakta yok" etiketi var.
 - [ ] Eski 1900042 kartındaki "Eski talebin notu" notu korunmuş.
+- [ ] Yönetim → **Durumu Eksik Kartlar** listesinde 1900045 ve 1910026 var; 1900029 yok (toplam 12 kart).
 - [ ] Yönetim → Son İşlemler (veya İşlem Logu dosyası):
   - 6 adet "EXCEL GERİDE: DURUM KARARI"
+  - 3 adet "EXCEL DURUM BOŞ: DURUM KARARI" ("durumsuz bırakıldı" / "(uygulamadaki korundu)")
+  - 1 adet "EXCEL: NOTLAR TEMİZLENDİ"; ayrıntısında silinen "M18 eski notu" metni var
   - 1 adet "EXCEL NO BAŞKA TALEBE VERİLDİ"
 
 ## 3. Aynı dosya tekrar: `03_AYNI_DOSYA_TEKRAR.xlsx`
 
 - [ ] Önizleme kutuları: Yeni 0, Güncellenecek 0, Değişmeyecek **104**, Pasifleşecek 0.
-- [ ] Karar gerekiyor bölümünde **5** kart var: M 24, M 39, M 40, E 22, Ü 11.
-  - Excel hâlâ geride; öneriler uygulamadaki durumu korur.
+- [ ] Karar gerekiyor bölümünde **6** kart var: M 24, M 39, M 40, E 22, Ü 11 ve M 29.
+  - İlk beşinde Excel hâlâ geride; M 29'da Excel'de DURUM hâlâ boş. Öneriler uygulamadaki durumu korur.
   - M 41 listede yok, çünkü artık Excel ile uygulama aynı.
+  - M 45 ve E 26 da listede yok: artık uygulamada da durumsuzlar.
 - [ ] Uygulayın. Hiçbir kartın durumu veya adedi değişmez, kopya kart oluşmaz.
 
 ## 4. Excel yetişti: `04_EXCEL_YETISTI.xlsx`
@@ -211,9 +238,10 @@ Bu dosyada Excel, uygulamada yapılanlara yetiştirildi:
 - M 24 ve M 39 bugün tarihli TESLİM EDİLDİ.
 - M 40 ve E 22 DİZGİDE.
 - Ü 11 "ÜRETİM DEVAM EDİYOR".
+- M 29'a PLANA ALINDI yazıldı.
 
 - [ ] Önizlemede **Karar gerekiyor bölümü yok**.
-- [ ] Güncellenecek **5** kart: M 24, M 39, M 40, E 22, Ü 11. Bunlarda yalnız "Excel Durumu" metni değişir.
+- [ ] Güncellenecek **6** kart: M 24, M 29, M 39, M 40, E 22, Ü 11. Bunlarda yalnız "Excel Durumu" metni değişir.
 - [ ] Uygulayın.
 
 ## 5. Reddedilmesi gereken dosyalar (hiçbiri kayıt değiştirmez)
@@ -248,7 +276,7 @@ Her dosyayı **Etkiyi Önizle** ile deneyin. Kırmızı **"Excel kabul edilmedi"
   1. Yönetim → Kartlar → 1910029 (E 29, PLANA ALINDI) → Düzenle → **Malzeme Bekliyor** kutusunu işaretleyip kaydedin.
   2. `elle1` ile bu kartta **Dizgiye Al**'a basın. Malzemenin tedarik edildiğini onaylamanızı isteyen soru gelmeli.
   3. Onaylayın. Kart DİZGİDE olmalı ve işlem kaydında "MALZEME TEDARİK ONAYLANDI" görünmeli.
-- [ ] **Durum ata:** Yönetim → Durumu Eksik Kartlar → 1900029 → **Durum Ata** → PLANA ALINDI. Kart listeden çıkar ve Pano'da görünür.
+- [ ] **Durum ata:** Yönetim → Durumu Eksik Kartlar → 1910034 (E 34) → **Durum Ata** → PLANA ALINDI. Kart listeden çıkar ve Pano'da görünür. (Excel'de DURUM boş kaldığı için bir sonraki importta bu kart M 29 gibi karar ister.)
 - [ ] **Gizle / geri getir:**
   1. Kartlar tablosunda bir kartı **Gizle**. Kart Pano'dan kalkar.
   2. **Gizlenen Kartlar** → **Geri Getir**. Kart geri gelir.

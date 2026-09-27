@@ -81,6 +81,45 @@ edilir. Her karar işlem loguna "EXCEL GERİDE: DURUM KARARI" olarak yazılır. 
 eskisi gibi Excel'i uygular. Gerçek sunucu + gerçek Excel ile denendi: operatörün 2/5 DİZGİDE ve TESLİM
 ettiği kartlar korundu, Excel'de kasıtlı geri alınan kart Excel'e göre güncellendi.
 
+## 2f. Excel'de DURUM boşaltılınca karar ve "Notları temizle" — altıncı adım
+
+**DURUM boş.** Uygulamada durumu olan bir kartın DURUM hücresi Excel'de boşaltılınca (veya MALZEME TEDARİK /
+PDGM ÖNERİ yazılınca) önizleme uyarı vermiyor, kart eski durumunda kalıyordu. Artık kart "Karar gerekiyor"
+bölümüne düşüyor.
+- Seçenekler: **Durumsuz bırak** (Excel'e uy) veya uygulamadaki durumu korumak.
+- Durumsuz bırakılan kart operasyon ekranlarından kalkar ve Durumu Eksik listesine düşer. Tamamlanan adedi 0 olur.
+- Öneri, geride kalma kararındaki mantığı izler: durum uygulamada verildiyse (operatör ilerletti veya Excel boşken
+  admin Durum Ata yaptı) korunur, Excel'den geldiyse durumsuz bırakılır.
+- Bant, başlık, gerekçe ve bildirim metinleri iki durumu (Excel geride / DURUM boş) ayrı sayar. Log kaydı:
+  "EXCEL DURUM BOŞ: DURUM KARARI".
+- Eksik ya da geçersiz seçim tüm aktarımı iptal eder; seçim yapılmadı diye kart sessizce durumsuz bırakılmaz.
+- Önizlemesiz doğrudan import eski sözleşmeyi korur.
+
+**Notlar.** Durum değişince eski notlar kartta kalıyordu. Önizlemede, bu importta durumu değişen veya karar istenen
+ve notu olan kartlarda **Notları temizle** kutusu çıkıyor.
+- Kutu varsayılan olarak işaretsiz; mevcut not metni kutunun altında görünür.
+- Grup için "Tümünü işaretle" düğmesi var; onay çubuğu seçilen kart sayısını gösterir.
+- Silinen metin "EXCEL: NOTLAR TEMİZLENDİ" logunda saklanır.
+- Otomatik silme seçilmedi: notlar elle yazılmış bilgidir ve durum değişse de geçerli olabilir.
+
+**Doğrulama.**
+- `tests/test_durumsuz_ve_notlar.py` (8 test):
+  - öneriler;
+  - seçimlerin uygulanması;
+  - teslim tarihinin korunması;
+  - geçersiz seçimde bellek ve diskin geri alınması;
+  - doğrudan import uyumu;
+  - not uygunluğu;
+  - arayüz akışı.
+- Test paketi (02 dosyası) şu vakalarla genişletildi:
+  - M 45'te DURUM silindi;
+  - E 26'da DURUM MALZEME TEDARİK yapıldı;
+  - M 29'a admin Durum Ata yaptı;
+  - M 18 ve M 16'ya not eklendi.
+- İzole sunucu + gerçek HTTP + gerçek Excel COM ile 01–04 adımları koşuldu. Kutular, bant, 9 karar, bildirim,
+  kart durumları ve Durumu Eksik listesi rehberle aynı çıktı.
+- Tarayıcıda sayaçlar, "Durumsuz bırak" açıklaması ve not metninin üstünün çizilmesi denendi; konsolda hata yok.
+
 ## 3. EÜM entegrasyonu
 
 Sayfa, model, operatör tipi (`eum_dizgi`), filtreler ve rozetler güncel kodda zaten vardı; kırık olan parser katmanıydı.
@@ -112,6 +151,9 @@ Plan başlangıcı hafta metninin Pazartesi'si; güncelleme/silme kuralları di�
 | Sahadaki hatalar: 5 MAKİNE + 2 ELDE, teslim/PLANDA, çoklu Talep+Stok, NO yeniden kullanımı, tanınmayan DURUM | PASS |
 | Tamamlanan adedi sıfırla: uygunluk, seçilmezse koruma, geçersiz seçimde iptal, arayüz akışı | PASS |
 | Excel geride: öneriler, seçimlerin uygulanması, geçersiz seçimde iptal, doğrudan import uyumu, arayüz | PASS |
+| Excel'de DURUM boş: karar, öneriler, geçersiz seçimde iptal, teslim tarihi koruma; Notları temizle: uygunluk, log, arayüz | PASS |
+| Test paketi akışı (rehberdeki sayılar, gerçek COM dahil) | PASS |
+| Tüm paket 27.09.2026 (`PDGM_TEST_EXCEL_COM=1`, frontend oturumunun testleri dahil) | 120/120 PASS |
 | Tüm paket: 96 test (`PDGM_TEST_EXCEL_COM=1`) | 96/96 PASS |
 | İzole sunucu + gerçek HTTP + gerçek COM uçtan uca (tarayıcıda pano kontrolü) | PASS |
 | Node JS testleri (`monitor_rotation.cjs`, `frontend_contract.cjs`) | ÇALIŞTIRILMADI (Node kurulu değil; ilgili dosyalar değişmedi) |
