@@ -32,6 +32,7 @@ class UITests(unittest.TestCase):
         with patch.object(depo,'process_kilidi_al'):
             spec.loader.exec_module(module)
         module.app.template_folder=str(ROOT/'templates')
+        module.app.static_folder=str(ROOT/'static')
         module.app.config['TESTING']=True
         for handler in list(module.app.logger.handlers):
             if getattr(handler,'baseFilename',None):
@@ -58,7 +59,9 @@ class UITests(unittest.TestCase):
         panel=client.get('/panel').get_data(as_text=True)
         self.assertIn('PLANINDA (',panel)
         self.assertIn('HAND',panel); self.assertIn('EUM',panel)
-        self.assertIn('Dizgideki Farklı Stok Sayısı',panel)
+        # KPI: ana sayı iş emri, farklı stok sayısı alt bilgi (frontend incelemesi #11).
+        self.assertIn('data-kpi-filtre="DİZGİDE"',panel)
+        self.assertIn('farklı stok',panel)
 
     def test_upload_route_updates_api_and_persistence(self):
         module,client=self.load_app()

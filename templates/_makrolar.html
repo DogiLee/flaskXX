@@ -1,0 +1,65 @@
+{# Birden fazla ekranda kullanılan parçalar. Tek kaynaktan üretilir ki ekranlar arasında kaymasın. #}
+
+{# Aramada her ekranda aynı alanlar taranır. #}
+{% macro arama_metni(k) -%}
+{{ [k.id, k.talep_no, k.stok_no, k.talep_sahibi, k.operator, k.aciklama, k.pcb, k.dizgi_sorumlusu, k.dizgi_etiket]|select|join(" ") }}
+{%- endmacro %}
+
+{% macro dizgi_rozetleri(k, malzeme=True) -%}
+    {%- if k.dizgi_kod == 'ELLE' %}<span class="durum-rozet elle">Elle Dizgi</span>{% endif -%}
+    {%- if k.dizgi_kod == 'EUM' %}<span class="durum-rozet eum">EÜM'de Dizgi</span>{% endif -%}
+    {%- if malzeme and k.malzeme_bekliyor %}<span class="durum-rozet uyari">Malzeme Bekliyor</span>{% endif -%}
+{%- endmacro %}
+
+{# Satır içi style="width:%" yerine <progress>: CSP ile uyumlu ve ekran okuyucuya değer bildirir. #}
+{% macro ilerleme_cubugu(k, sinif="") -%}
+<progress class="ilerleme-cubugu {{ sinif }}" value="{{ [k.adet_yuzde or 0, 100]|min }}" max="100"
+          aria-label="Üretim ilerlemesi: {{ k.tamamlanan_adet }} / {{ k.toplam_adet }} adet">%{{ k.adet_yuzde }}</progress>
+{%- endmacro %}
+
+{# Durum özet kartı. Ana sayı iş emri (kart) sayısı; farklı stok sayısı alt bilgi.
+   Tıklanınca o durumun filtresini seçer. Dizgi tipi filtresine göre sayılar JS ile değişir. #}
+{% macro kpi_karti(sayac, anahtar, durum, sinif, baslik) -%}
+<button type="button" class="istatistik istatistik-buton {{ sinif }}" data-kpi-filtre="{{ durum }}"
+        aria-pressed="false" title="{{ baslik }} kartlarını listele"
+        data-kart-hepsi="{{ sayac[anahtar ~ '_kart'] }}"
+        data-kart-makine="{{ sayac[anahtar ~ '_kart_makine'] }}"
+        data-kart-elle="{{ sayac[anahtar ~ '_kart_elle'] }}"
+        data-kart-eum="{{ sayac[anahtar ~ '_kart_eum'] }}"
+        data-stok-hepsi="{{ sayac[anahtar] }}"
+        data-stok-makine="{{ sayac[anahtar ~ '_makine'] }}"
+        data-stok-elle="{{ sayac[anahtar ~ '_elle'] }}"
+        data-stok-eum="{{ sayac[anahtar ~ '_eum'] }}">
+    <span>{{ baslik }}</span>
+    <strong data-kpi-kart>{{ sayac[anahtar ~ '_kart'] }}</strong>
+    <small>iş emri · <b data-kpi-stok>{{ sayac[anahtar] }}</b> farklı stok</small>
+</button>
+{%- endmacro %}
+
+{% macro kpi_satiri(sayac) -%}
+<section class="istatistik-grid istatistik-grid-3" aria-label="İş durumu özeti">
+    {{ kpi_karti(sayac, "dizgide", "DİZGİDE", "kart-dizgide", "Dizgide") }}
+    {{ kpi_karti(sayac, "plana_alindi", "PLANA ALINDI", "kart-plana", "Plana Alındı") }}
+    {{ kpi_karti(sayac, "teslim", "TESLİM EDİLDİ", "kart-teslim", "Teslim Edildi") }}
+</section>
+{%- endmacro %}
+
+{# Yönetim "Düzenle" / "Durum Ata" butonları aynı öznitelikleri taşımalı (bkz. Malzeme Bekliyor hatası). #}
+{% macro duzenle_butonu(k, etiket="Düzenle", sinif="buton-hayalet") -%}
+<button class="buton buton-kucuk {{ sinif }}" type="button" data-admin-duzenle
+        data-id="{{ k.id }}"
+        data-surum="{{ k.surum }}"
+        data-talep="{{ k.talep_no or '' }}"
+        data-stok="{{ k.stok_no or '' }}"
+        data-durum="{{ k.durum or '' }}"
+        data-toplam="{{ k.toplam_adet if k.toplam_adet is not none else '' }}"
+        data-tamamlanan="{{ k.tamamlanan_adet if k.tamamlanan_adet is not none else 0 }}"
+        data-plan-hafta="{{ k.plan_hafta or '' }}"
+        data-plan-baslama="{{ k.plan_baslama or '' }}"
+        data-plan-teslim="{{ k.plan_teslim or '' }}"
+        data-gerceklesen-teslim="{{ k.gerceklesen_teslim or '' }}"
+        data-dizgi-kod="{{ k.dizgi_kod }}"
+        data-dizgi-sorumlusu="{{ k.dizgi_sorumlusu or '' }}"
+        data-malzeme="{{ '1' if k.malzeme_bekliyor else '0' }}"
+        data-not="{{ k.aciklama or '' }}">{{ etiket }}</button>
+{%- endmacro %}

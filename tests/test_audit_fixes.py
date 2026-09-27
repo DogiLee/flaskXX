@@ -100,9 +100,12 @@ class AuditFixTests(unittest.TestCase):
             with path.open('rb') as f:
                 r=self.client.post('/yonetim/yukle',data={'_csrf_token':'test-token','onizleme':'1','dosya':(f,'plan.xlsx')})
             self.assertEqual(r.status_code,200)
-            # Önizleme tamamlanan adedin 3'ten 0'a ineceğini "Şu an / Onaydan sonra" olarak gösterir.
-            self.assertRegex(r.get_data(as_text=True),
-                             r'<td>Tamamlanan Adet</td>\s*<td class="eski">3</td>\s*<td class="yeni">0</td>')
+            # Operatör kartı dizgiye alıp 3 adet girdi, Excel hâlâ PLANA ALINDI diyor:
+            # önizleme kartı "Karar gerekiyor" bölümüne koyar, önerilen seçim uygulamadaki durum.
+            html=r.get_data(as_text=True)
+            self.assertIn('id="karar-gerekiyor"',html)
+            self.assertRegex(html,rf'<select name="gerileme_{k["id"]}" form="onay-formu"')
+            self.assertIn('<option value="DİZGİDE" selected>DİZGİDE · uygulamadaki (önerilen)</option>',html)
             self.assertEqual(depo._kartlar,before)
             self.assertEqual(Path(depo.KARTLAR_DOSYA).read_bytes(),disk)
             self.post('/api/not',{'kart_id':k['id'],'not':'Önizlemeden sonraki not'})
@@ -112,7 +115,12 @@ class AuditFixTests(unittest.TestCase):
             with path.open('rb') as f:
                 r=self.client.post('/yonetim/yukle',data={'_csrf_token':'test-token','onizleme':'1','dosya':(f,'plan.xlsx')})
             self.assertEqual(r.status_code,200)
-            self.assertEqual(self.client.post('/yonetim/yukle-onay',data={'_csrf_token':'test-token'}).status_code,302)
+            # Seçim gönderilmezse aktarım uygulanmaz; admin Excel'e göre geri almayı seçerse adet 0 olur.
+            self.assertEqual(self.client.post('/yonetim/yukle-onay',data={'_csrf_token':'test-token'}).status_code,409)
+            with path.open('rb') as f:
+                self.client.post('/yonetim/yukle',data={'_csrf_token':'test-token','onizleme':'1','dosya':(f,'plan.xlsx')})
+            self.assertEqual(self.client.post('/yonetim/yukle-onay',data={'_csrf_token':'test-token',
+                f'gerileme_{k["id"]}':'PLANA ALINDI'}).status_code,302)
             self.assertEqual(depo.kart_getir(k['id'])['tamamlanan_adet'],0)
             self.assertIn('Önizlemeden sonraki not',depo.kart_getir(k['id'])['aciklama'])
             self.assertEqual(self.client.post('/yonetim/yukle-onay',data={'_csrf_token':'test-token'}).status_code,409)

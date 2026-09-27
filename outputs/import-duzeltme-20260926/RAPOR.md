@@ -56,6 +56,31 @@ parser uyarıları türlü üretir (`uyari_gruplari`, `atlanan_gruplari`).
     sütunu gösterilirse tarihler yanlış bloktan gelirdi (yeniden üretildi). Artık DURUM'a yakın üretim
     sütunu okunur; gizleme/gösterme sonucu değiştirmez.
 
+## 2d. Önizlemede "Tamamlanan adedi sıfırla" seçeneği — dördüncü adım
+
+Mevcut kural: PLANA ALINDI / HAZIR olan kartta tamamlanan adet zorunlu 0, TESLİM EDİLDİ'de zorunlu toplam;
+yalnız DİZGİDE kalan kartta operatörün girdiği adet korunur (ör. TESLİM → DİZGİDE dönen kart 5/5 kalır).
+Önizlemede, bu importta güncellenen ve sonunda DİZGİDE kalan, tamamlanan adedi > 0 olan her kartın altında
+varsayılan işaretsiz "Tamamlanan adedi sıfırla" kutusu, grup başında açıklama ve "Tümünü işaretle", onay
+çubuğunda sayaç var. Seçim onay formuyla gönderilir; sunucu yalnız o önizlemede sunulan kartları kabul eder ve
+depo uygulama anında uygunluğu yeniden denetler (uygun olmayan seçim tüm importu iptal eder). Sıfırlama
+tamamlanan adedi 0 yapar, bitiş zamanını temizler; not, operatör ve başlama bilgisi korunur; audit logda
+eski/yeni değerle görünür. Doğrudan (önizlemesiz) import davranışı değişmedi.
+
+## 2e. Excel uygulamanın gerisinde kalınca admin kararı — beşinci adım
+
+Sorun (analiz raporu #2): Excel güncellenmeden yapılan import, operatörün uygulamada ilerlettiği kartı
+geri alıyordu (6/10 DİZGİDE → PLANA 0/10; bugün teslim edilen → DİZGİDE, teslim tarihi silinir).
+Önizlemede artık en üstte "Karar gerekiyor" bölümü var: her kart için uygulamadaki ve Excel'deki durum,
+neden orada olduğu, Excel ile uygulama durumu arasındaki seçenekler (önerilen işaretli) ve yalnız DİZGİDE
+seçilince açılan "Tamamlanan adedi sıfırla" kutusu. Öneri: kart uygulamada ilerletildiyse (başlama/teslim
+zamanı var) uygulamadaki durum, durum yalnız Excel'den geldiyse (Excel'de kasıtlı geri alma) Excel.
+Toplu "Hepsinde uygulamadakini koru" / "Hepsini Excel'e göre ayarla" düğmeleri ve onay çubuğunda özet var.
+Seçim eksik, aralık dışı, gerilemeyen karta ait ya da PLANA seçilen kartta sıfırlama ise tüm aktarım iptal
+edilir. Her karar işlem loguna "EXCEL GERİDE: DURUM KARARI" olarak yazılır. Önizlemesiz doğrudan import
+eskisi gibi Excel'i uygular. Gerçek sunucu + gerçek Excel ile denendi: operatörün 2/5 DİZGİDE ve TESLİM
+ettiği kartlar korundu, Excel'de kasıtlı geri alınan kart Excel'e göre güncellendi.
+
 ## 3. EÜM entegrasyonu
 
 Sayfa, model, operatör tipi (`eum_dizgi`), filtreler ve rozetler güncel kodda zaten vardı; kırık olan parser katmanıydı.
@@ -85,7 +110,9 @@ Plan başlangıcı hafta metninin Pazartesi'si; güncelleme/silme kuralları di�
 | Gerçek Excel COM: orijinal + değişiklik + tekrar, `=NA()`, metin koruma | PASS |
 | Önizleme arayüzü: gruplar, karşılaştırma, toplu pasifleşme uyarısı, 422 hata ekranı | PASS |
 | Sahadaki hatalar: 5 MAKİNE + 2 ELDE, teslim/PLANDA, çoklu Talep+Stok, NO yeniden kullanımı, tanınmayan DURUM | PASS |
-| Tüm paket: 84 test (`PDGM_TEST_EXCEL_COM=1`) | 84/84 PASS |
+| Tamamlanan adedi sıfırla: uygunluk, seçilmezse koruma, geçersiz seçimde iptal, arayüz akışı | PASS |
+| Excel geride: öneriler, seçimlerin uygulanması, geçersiz seçimde iptal, doğrudan import uyumu, arayüz | PASS |
+| Tüm paket: 96 test (`PDGM_TEST_EXCEL_COM=1`) | 96/96 PASS |
 | İzole sunucu + gerçek HTTP + gerçek COM uçtan uca (tarayıcıda pano kontrolü) | PASS |
 | Node JS testleri (`monitor_rotation.cjs`, `frontend_contract.cjs`) | ÇALIŞTIRILMADI (Node kurulu değil; ilgili dosyalar değişmedi) |
 

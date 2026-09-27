@@ -1,0 +1,53 @@
+Frontend düzeltmeleri — test sonuçları (27.09.2026)
+
+Başlangıç (değişiklikten önce)
+  python -m unittest discover -s tests -t .
+  Ran 96 tests — OK (skipped=5)
+
+Değişiklikten sonra
+  python -m unittest discover -s tests -t .
+  Ran 111 tests in 50.4s — OK (skipped=6)
+
+  PDGM_TEST_EXCEL_COM=1 python -m unittest discover -s tests -t .
+  Ran 111 tests in 130.9s — OK   (gerçek Excel COM dahil; test sonrası açık EXCEL.EXE kalmadı)
+
+  Yeni: tests/test_frontend.py — 10 test
+    test_durum_ata_malzeme_bekliyor_isaretini_korur
+    test_sayfalar_satir_ici_kod_icermez_ve_csp_gonderir   (Pano, Operatör, Monitör, Yönetim, Giriş, Import önizleme)
+    test_statik_adresler_otomatik_surumlu
+    test_api_surum_degisikligi_ve_oturumu_bildirir
+    test_operator_yalniz_son_teslimleri_cizer
+    test_kpi_ve_donem_metrikleri
+    test_arama_alanlari_bolumler_arasinda_ayni
+    test_yukleme_adi_oneki_atilir
+    test_operator_dialoglari
+    test_giris_formlari_ic_ice_degil
+
+JS testleri (tests/*.cjs)
+  Bu makinede Node yok. Dosyalar, izole kopyada CSP'den muaf bir test sayfasında
+  require/vm/assert için küçük bir uyarlama katmanıyla, değiştirilmeden çalıştırıldı:
+    frontend_contract.cjs — PASS (fetch sözleşmesi, Türkçe arama, gg.aa.yyyy <-> ISO)
+    monitor_rotation.cjs  — PASS (12 sn rotasyon, kaldığı yerden devam,
+                                  sunucu yokken yenileme yok + bant, veri değişince yenileme)
+  Not: Uyarlama katmanı frontend_contract.cjs'de bir hata yakaladı (iki kod parçası
+  arasında satır sonu eksikti); düzeltildi.
+
+Tarayıcıda doğrulama (izole kopya, 127.0.0.1:5055, data/ kopyası, test kullanıcıları)
+  #1  Kart 32 "Durum Ata" → PLANA ALINDI: Malzeme Bekliyor 1 olarak kaldı (önce 1 → 0).
+  #2  Not/Teslim sonrası yenilemede "Not eklendi." / "Kart TESLİM EDİLDİ..." bildirimi görünüyor.
+  #3  "Ahmet (vardiya 2)" yenilemeden sonra da ve tüm dialoglarda hazır; not ve teslim notu bu adla imzalandı.
+  #4  375px ve 768px: arama alanı 340px → 64px (input 181px → 42px).
+  #5  1920×1080: talep no 19 → 40px, stok 17 → 33px, rozet 9 → 18px, sahip 11 → 22px,
+      tarih 15 → 27px; 8 kartlık kuyrukta 2×3 ızgara, "Sayfa 1/2", taşma yok; menü/Çıkış yok.
+  #6  Sunucu durduruldu: monitör hata sayfasına düşmedi, kırmızı bant + eski veri; sunucu
+      dönünce kendiliğinden yenilendi, rotasyon kaldığı sayfadan devam etti.
+  #7  375px Yönetim: sayfa genişliği 701px → 375px; dosya adı öneksiz.
+  #8  Tab ile odak: koyu başlıkta 3px açık mavi halka (9,21:1); açık zeminde 5,42:1.
+  #9  Dizgide + Elle Dizgi birlikte seçildi, kayıttan sonra filtre ve arama korundu.
+  #10 Sunucu hatası bildirimi 6 sn sonra da duruyor (kapat düğmesi, role=alert); başarı kendiliğinden kapandı.
+  #11 Başka ekrandan not eklendi → "Yeni veri var" + bant; sekme gizli/boştayken sayfa kendiliğinden yenilendi.
+  #12 Pano açılışında teslim tablosu ve metrikler sunucudan geliyor (26 iş emri), API çağrısı yok.
+  #15 Giriş sayfası: iki form ayrı, stil dosyası ?v= ile.
+  #16 1000px: monitör tek sütun (önce 2).
+  #19 "3.8 gün" → "3,8 gün".
+  CSP: Pano, Operatör, Yönetim, Monitör gezildi; konsolda CSP ihlali yok.

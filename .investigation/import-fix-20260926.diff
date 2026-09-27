@@ -1,6 +1,6 @@
 --- before/depo.py
 +++ after/depo.py
-@@ -2211,8 +2211,19 @@
+@@ -2211,9 +2211,27 @@
              _kartlar, _loglar, _yuklemeler = asil
  
  
@@ -17,11 +17,20 @@
 +
  def excel_import_uygula(dosya_adi, kullanici, satirlar, uyari_sayisi=0,
 -                       sadece_onizleme=False, beklenen_surum=None):
-+                       sadece_onizleme=False, beklenen_surum=None, kaynak_ozeti=""):
-     """Tamamen parse/validate edilmiş kaynak satırlarını tek transaction-benzeri blokta uygular."""
+-    """Tamamen parse/validate edilmiş kaynak satırlarını tek transaction-benzeri blokta uygular."""
++                       sadece_onizleme=False, beklenen_surum=None, kaynak_ozeti="",
++                       tamamlanan_sifirla=()):
++    """Tamamen parse/validate edilmiş kaynak satırlarını tek transaction-benzeri blokta uygular.
++
++    tamamlanan_sifirla: önizlemede admin'in seçtiği kart ID'leri. Yalnız bu importta
++    güncellenen ve sonunda DİZGİDE kalan, tamamlanan adedi 0'dan büyük kartlar
++    sıfırlanabilir (PLANA/HAZIR'da adet zaten 0, TESLİM'de toplama eşittir).
++    Uygun olmayan bir ID tüm importu iptal eder.
++    """
      global _kartlar, _loglar, _yuklemeler
  
-@@ -2230,6 +2241,7 @@
+     with _kilit:
+@@ -2230,6 +2248,7 @@
              gorulen = set()
              yeni = 0
              guncellenen = 0
@@ -29,11 +38,14 @@
              workflow_korundu = 0
              durum_iyilesen = 0
              elle_dizgi_satir = sum(
-@@ -2243,14 +2255,35 @@
+@@ -2243,14 +2262,38 @@
                  if satir.get("plan", {}).get("dizgi_tipi") == DIZGI_TIPI_EUM
              )
              pasife_listesi = []
 +            ayrilanlar = {}
++            sifirla = {_sayi(kart_id, -1) for kart_id in (tamamlanan_sifirla or ())}
++            sifirlanabilir = set()
++            sifirlanan = 0
              sonraki_id = max([_sayi(kart.get("id"), 0) for kart in _kartlar] or [0]) + 1
  
              for satir in satirlar:
@@ -66,13 +78,24 @@
                  if mevcut:
                      onceki = copy.deepcopy(mevcut)
                      yeni_toplam = int(plan["toplam_adet"])
-@@ -2298,14 +2331,19 @@
+@@ -2298,14 +2341,30 @@
                          # Excel import zamanı gerçek üretim/teslim zamanı değildir.
                          mevcut["operator"] = mevcut.get("operator") or "Excel"
                      _kart_dogrula(mevcut)
 -                    guncellenen += 1
                      degisiklik = {a: [onceki.get(a), mevcut.get(a)] for a in mevcut
                                   if a != "guncelleme" and onceki.get(a) != mevcut.get(a)}
++                    # Güncellenen ve DİZGİDE kalan kartta operatörün girdiği tamamlanan adet
++                    # korunur; admin önizlemede isterse sıfırlatabilir.
++                    if (degisiklik and mevcut.get("durum") == DIZGIDE
++                            and _sayi(mevcut.get("tamamlanan_adet"), 0) > 0):
++                        sifirlanabilir.add(mevcut["id"])
++                        if mevcut["id"] in sifirla:
++                            mevcut.update(tamamlanan_adet=0, bitis_zamani=None)
++                            _kart_dogrula(mevcut)
++                            degisiklik = {a: [onceki.get(a), mevcut.get(a)] for a in mevcut
++                                         if a != "guncelleme" and onceki.get(a) != mevcut.get(a)}
++                            sifirlanan += 1
                      if degisiklik:
 +                        guncellenen += 1
                          _loglar.append(_log_kaydi(
@@ -87,7 +110,7 @@
                      continue
  
                  toplam = int(plan["toplam_adet"])
-@@ -2337,6 +2375,7 @@
+@@ -2337,6 +2396,7 @@
                      "source_active": 1,
                      "admin_gizli": 0,
                      "kaynak": "EXCEL",
@@ -95,7 +118,22 @@
                  }
                  kayit.update(plan)
                  _kart_dogrula(kayit)
-@@ -2372,14 +2411,38 @@
+@@ -2345,6 +2405,14 @@
+                 sonraki_id += 1
+                 yeni += 1
+ 
++            gecersiz_secim = sifirla - sifirlanabilir
++            if gecersiz_secim:
++                raise IsKuralHatasi(
++                    "Tamamlanan adedi sıfırlanmak üzere seçilen kart bu aktarımda güncellenmiyor veya "
++                    f"DİZGİDE kalmıyor (ID: {', '.join(map(str, sorted(gecersiz_secim)))}). "
++                    "Aktarım uygulanmadı; dosyayı yeniden seçip yeni önizleme oluşturun."
++                )
++
+             pasife_alinan = 0
+             for kart in _kartlar:
+                 if kart.get("kaynak") != "EXCEL" or kart.get("anahtar") in gorulen:
+@@ -2372,14 +2440,41 @@
                  degisiklikler = []
                  for kart in _kartlar:
                      onceki = oncekiler.get(kart["id"], {})
@@ -125,6 +163,8 @@
 +                                "sira", "talep_sahibi", "toplam_adet", "durum", "excel_durum",
 +                                "plan_baslama", "plan_teslim", "gerceklesen_teslim")},
 +                            "yerine": ayrilanlar.get(kart["id"]),
++                            "tamamlanan_adet": kart.get("tamamlanan_adet"),
++                            "sifirlanabilir": kart["id"] in sifirlanabilir,
 +                        })
 +                mevcut_aktif = sum(1 for k in eski_kartlar
 +                                   if k.get("kaynak") == "EXCEL" and k.get("source_active", 1) == 1)
@@ -133,13 +173,14 @@
 -                        "uyari": uyari_sayisi}
 +                        "guncellenen": guncellenen, "degismeyen": degismeyen,
 +                        "ayrilan": len(ayrilanlar),
++                        "sifirlanabilir": sorted(sifirlanabilir),
 +                        "pasife_alinan": pasife_alinan, "pasife_listesi": pasife_listesi,
 +                        "mevcut_aktif": mevcut_aktif,
 +                        "degisiklikler": degisiklikler, "uyari": uyari_sayisi}
  
              _yuklemeler.append(
                  {
-@@ -2400,9 +2463,11 @@
+@@ -2400,9 +2495,12 @@
                      "EXCEL YÜKLENDİ",
                      detay=(
                          f"{len(satirlar)} satır · {yeni} yeni · {guncellenen} güncellendi · "
@@ -147,17 +188,19 @@
                          f"{workflow_korundu} workflow korundu · {durum_iyilesen} durum Excel'den değişti · "
 -                        f"{pasife_alinan} kaynakta yok · "
 +                        f"{pasife_alinan} kaynakta yok · {len(ayrilanlar)} NO başka talebe verildi · "
++                        f"{sifirlanan} kartın tamamlanan adedi admin seçimiyle sıfırlandı · "
                          f"{uyari_sayisi} uyarı · yedek={os.path.basename(yedek_klasoru)}"
 +                        + (f" · {kaynak_ozeti}" if kaynak_ozeti else "")
                      ),
                  )
              )
-@@ -2420,6 +2485,8 @@
+@@ -2420,6 +2518,9 @@
                  "satir": len(satirlar),
                  "yeni": yeni,
                  "guncellenen": guncellenen,
 +                "degismeyen": degismeyen,
 +                "ayrilan": len(ayrilanlar),
++                "sifirlanan": sifirlanan,
                  "pasife_alinan": pasife_alinan,
                  "pasife_listesi": pasife_listesi[:20],
                  "workflow_korundu": workflow_korundu,
@@ -213,7 +256,7 @@
  @app.errorhandler(PermissionError)
  def _excel_kilitli(_hata):
      mesaj = (
-@@ -1058,6 +1094,51 @@
+@@ -1058,6 +1094,53 @@
          pass
  
  
@@ -238,6 +281,8 @@
 +        mesaj += f" · {sonuc['elle_dizgi_satir']} kart ELDE DİZGİ sayfasından."
 +    if sonuc.get("eum_dizgi_satir"):
 +        mesaj += f" · {sonuc['eum_dizgi_satir']} kart EÜM sayfasından."
++    if sonuc.get("sifirlanan"):
++        mesaj += f" · {sonuc['sifirlanan']} kartın tamamlanan adedi seçiminizle sıfırlandı."
 +    if sonuc.get("durum_iyilesen"):
 +        mesaj += (
 +            f" · {sonuc['durum_iyilesen']} kartın durumu Excel'den güncellendi."
@@ -265,8 +310,13 @@
  @app.route("/yonetim/yukle", methods=["POST"])
  @yetki("admin")
  @csrf_koru
-@@ -1087,34 +1168,18 @@
-                 "surum": sonuc["surum"], "kaynak_surum": sonuc["kaynak_surum"]}
+@@ -1084,37 +1167,22 @@
+             with open(yol, "rb") as kaynak:
+                 dosya_hash = hashlib.file_digest(kaynak, "sha256").hexdigest()
+             session["import_onizleme"] = {"dosya": kayit_adi, "hash": dosya_hash,
+-                "surum": sonuc["surum"], "kaynak_surum": sonuc["kaynak_surum"]}
++                "surum": sonuc["surum"], "kaynak_surum": sonuc["kaynak_surum"],
++                "sifirlanabilir": sonuc.get("sifirlanabilir", [])}
              return render_template("import_onizleme.html", sonuc=sonuc, dosya=guvenli_ad)
          sonuc = ex.excelden_aktar(yol, session["kullanici"])
 -        mesaj = (
@@ -307,9 +357,25 @@
      except Exception:  # noqa: BLE001
          app.logger.exception("Excel import sırasında beklenmeyen hata")
          flash("Excel okunurken beklenmeyen bir hata oluştu. Uygulama logunu kontrol edin.", "hata")
-@@ -1137,11 +1202,14 @@
+@@ -1134,14 +1202,29 @@
+         with open(yol, "rb") as kaynak:
+             if hashlib.file_digest(kaynak, "sha256").hexdigest() != bekleyen["hash"]:
+                 raise depo.IsKuralHatasi("Dosya önizlemeden sonra değişti. Dosyayı yeniden seçin.")
++        # Önizlemede "Tamamlanan adedi sıfırla" işaretlenen kartlar; yalnız o önizlemede
++        # sunulan kartlar kabul edilir (depo uygulama anında uygunluğu yeniden denetler).
++        try:
++            sifirla = sorted({int(deger) for deger in request.form.getlist("sifirla")})
++        except ValueError:
++            raise depo.IsKuralHatasi("Geçersiz kart seçimi. Dosyayı yeniden seçin.") from None
++        disarida = set(sifirla) - set(bekleyen.get("sifirlanabilir") or [])
++        if disarida:
++            raise depo.IsKuralHatasi(
++                "Tamamlanan adedi sıfırlanmak üzere önizlemede sunulmayan kart seçildi "
++                f"(ID: {', '.join(map(str, sorted(disarida)))}). Dosyayı yeniden seçin."
++            )
          sonuc = ex.excelden_aktar(yol, session["kullanici"], beklenen_surum=bekleyen["surum"],
-                                  beklenen_kaynak_surum=bekleyen["kaynak_surum"])
+-                                 beklenen_kaynak_surum=bekleyen["kaynak_surum"])
++                                 beklenen_kaynak_surum=bekleyen["kaynak_surum"], tamamlanan_sifirla=sifirla)
      except (depo.DepoHatasi, ex.ExcelAktarimHatasi, OSError) as hata:
 -        return render_template("import_onizleme.html", hata=str(hata)), 409
 -    flash(f"Excel aktarıldı · {sonuc['yeni']} yeni · {sonuc['guncellenen']} güncellendi · "
@@ -327,7 +393,7 @@
      _yuklenen_exceleri_buda()
      return redirect(url_for("yonetim"))
  
-@@ -1271,10 +1339,13 @@
+@@ -1271,10 +1354,13 @@
  
  
  def ozet_hesapla():
@@ -1228,7 +1294,7 @@
              "malzeme_bekliyor": 1 if malzeme_bekliyor_mu(excel_durum_raw) else 0,
          }
  
-@@ -612,8 +1122,16 @@
+@@ -612,22 +1122,40 @@
                  "ilk_durum": ilk_durum,
              }
          )
@@ -1245,18 +1311,24 @@
 +    return bitir()
  
  
- def excelden_aktar(dosya_yolu, kullanici, onizleme=False, beklenen_surum=None, beklenen_kaynak_surum=None):
-@@ -621,13 +1139,20 @@
-         return _excelden_aktar(dosya_yolu, kullanici, onizleme, beklenen_surum, beklenen_kaynak_surum)
- 
+-def excelden_aktar(dosya_yolu, kullanici, onizleme=False, beklenen_surum=None, beklenen_kaynak_surum=None):
++def excelden_aktar(dosya_yolu, kullanici, onizleme=False, beklenen_surum=None, beklenen_kaynak_surum=None,
++                   tamamlanan_sifirla=None):
+     with _import_kilidi:
+-        return _excelden_aktar(dosya_yolu, kullanici, onizleme, beklenen_surum, beklenen_kaynak_surum)
++        return _excelden_aktar(dosya_yolu, kullanici, onizleme, beklenen_surum, beklenen_kaynak_surum,
++                               tamamlanan_sifirla)
++
  
 +def _sayfa_bul(wb, sayfa_adi):
 +    """COM snapshot sayfaları kanonik adla yazar; doğrudan okunan dosyada adlar serbesttir."""
 +    hedef = _sadelestir(sayfa_adi)
 +    return next((wb[ad] for ad in wb.sheetnames if _sadelestir(ad) == hedef), None)
+ 
+-def _excelden_aktar(dosya_yolu, kullanici, onizleme=False, beklenen_surum=None, beklenen_kaynak_surum=None):
 +
-+
- def _excelden_aktar(dosya_yolu, kullanici, onizleme=False, beklenen_surum=None, beklenen_kaynak_surum=None):
++def _excelden_aktar(dosya_yolu, kullanici, onizleme=False, beklenen_surum=None, beklenen_kaynak_surum=None,
++                    tamamlanan_sifirla=None):
      snapshot_yolu = None
      wb = None
  
@@ -1268,7 +1340,7 @@
      except ExcelAktarimHatasi:
          raise
      except Exception as exc:
-@@ -635,29 +1160,39 @@
+@@ -635,29 +1163,39 @@
              f"Dosya geçerli bir Excel çalışma kitabı değil: {exc}"
          ) from exc
  
@@ -1316,7 +1388,7 @@
  
      finally:
          if wb is not None:
-@@ -671,6 +1206,11 @@
+@@ -671,6 +1209,11 @@
              except OSError:
                  pass
  
@@ -1328,7 +1400,14 @@
      # Dosya baytları aynı kalsa bile Excel formülleri yeniden hesaplanabilir.
      kaynak_surum = hashlib.sha256(json.dumps(parsed, sort_keys=True, ensure_ascii=False,
                                              default=str).encode("utf-8")).hexdigest()
-@@ -683,8 +1223,10 @@
+@@ -678,13 +1221,17 @@
+         raise ExcelAktarimHatasi("Excel'in hesaplanan değerleri önizlemeden sonra değişti. Yeni önizleme oluşturun.")
+     uygula = depo.excel_import_onizle if onizleme else depo.excel_import_uygula
+     secenekler = {"beklenen_surum": beklenen_surum} if beklenen_surum is not None else {}
++    if tamamlanan_sifirla:
++        secenekler["tamamlanan_sifirla"] = tamamlanan_sifirla
+     sonuc = uygula(
+         dosya_adi=os.path.basename(dosya_yolu),
          kullanici=kullanici,
          satirlar=parsed,
          uyari_sayisi=uyari_sayisi,
@@ -1341,7 +1420,7 @@
      return sonuc
 --- before/templates/import_onizleme.html
 +++ after/templates/import_onizleme.html
-@@ -1,31 +1,349 @@
+@@ -1,31 +1,388 @@
  {% extends "base.html" %}
  {% block title %}Import Önizleme · PDGM İş Takip{% endblock %}
 +
@@ -1624,6 +1703,15 @@
 +        <div class="etki-grup">
 +            <h3><span class="durum-rozet {{ rozet }}">{{ grup|length }}</span> Kart {{ baslik }}</h3>
 +            <p class="etki-aciklama">{{ aciklama }}</p>
++            {% set sifirlanabilirler = grup|selectattr("sifirlanabilir")|list %}
++            {% if sifirlanabilirler %}
++            <div class="sifirla-bilgi">
++                <p><strong>Tamamlanan adet korunacak:</strong> {{ sifirlanabilirler|length }} kart onaydan sonra DİZGİDE kalıyor ve operatörün girdiği tamamlanan adet olduğu gibi korunur. Excel'e göre üretime baştan başlanacaksa kartın altındaki kutuyu işaretleyin: tamamlanan adet 0 olur ve bitiş zamanı temizlenir; notlar ve başlama bilgisi korunur.</p>
++                {% if sifirlanabilirler|length > 1 %}
++                <button type="button" class="buton buton-hayalet buton-kucuk" data-hepsini-sec>Tümünü işaretle</button>
++                {% endif %}
++            </div>
++            {% endif %}
 +            <div class="fark-listesi">
 +                {% for k in grup %}
 +                <article class="fark-karti">
@@ -1646,6 +1734,15 @@
 +                        {% endfor %}
 +                        </tbody>
 +                    </table>
++                    {% if k.sifirlanabilir %}
++                    <label class="sifirla-secenek">
++                        <input type="checkbox" name="sifirla" value="{{ k.id }}" form="onay-formu" data-sifirla>
++                        <span>
++                            <strong>Tamamlanan adedi sıfırla</strong>
++                            <small>Şu an {{ k.tamamlanan_adet }} / {{ k.toplam_adet }} tamamlanmış görünüyor. İşaretlemezseniz korunur.</small>
++                        </span>
++                    </label>
++                    {% endif %}
 +                </article>
 +                {% endfor %}
 +            </div>
@@ -1685,7 +1782,8 @@
 +        <ul>
 +            <li>Önce kart, işlem logu ve yükleme geçmişi dosyalarının yedeği alınır.</li>
 +            <li>Değişiklikler tek seferde uygulanır; bir hata olursa hiçbiri uygulanmaz.</li>
-+            <li>Excel'de boş bırakılan tarih, kartta da temizlenir. DURUM boş veya tanınmıyorsa kartın mevcut iş akışı korunur.</li>
++            <li>Excel'de boş bırakılan tarih, kartta da temizlenir. DURUM boş ya da MALZEME TEDARİK / PDGM ÖNERİ ise kartın mevcut iş akışı korunur; tanınmayan DURUM aktarımı durdurur.</li>
++            <li>Tamamlanan adet: PLANA ALINDI olan kartta 0'a, TESLİM EDİLDİ olan kartta toplam adede kendiliğinden eşitlenir. DİZGİDE kalan kartta korunur; yalnız işaretlediğiniz kartlarda sıfırlanır.</li>
 +            <li>Bu sayfa açıkken dosya veya kartlar değişirse aktarım uygulanmaz ve yeni önizleme istenir.</li>
 +        </ul>
 +    </section>
@@ -1693,11 +1791,11 @@
 +    <div class="onizleme-aksiyon">
 +        <p>
 +            <strong>{{ sonuc.yeni }} yeni · {{ guncellenen }} güncelleme · {{ pasiflesecek }} pasifleşme</strong>
-+            <span>Onaylayana kadar hiçbir kayıt değişmez.</span>
++            <span>Onaylayana kadar hiçbir kayıt değişmez.<b data-sifirla-ozet hidden> · <i>0</i> kartta tamamlanan adet sıfırlanacak.</b></span>
 +        </p>
 +        <div class="buton-grup">
 +            <a class="buton buton-hayalet" href="{{ url_for('yonetim') }}">Vazgeç</a>
-+            <form action="{{ url_for('yukle_onay') }}" method="post" data-tek-gonderim>
++            <form id="onay-formu" action="{{ url_for('yukle_onay') }}" method="post" data-tek-gonderim>
 +                <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
 +                <button class="buton {{ 'buton-tehlike' if toplu_pasif else 'buton-basari' }}" type="submit">{{ "Yine de uygula" if toplu_pasif else "Değişiklikleri uygula" }}</button>
 +            </form>
@@ -1712,6 +1810,26 @@
 +            buton.textContent = "Uygulanıyor…";
 +        });
 +    });
++
++    // Tamamlanan adet sıfırlama seçimleri: onay çubuğundaki sayaç ve grup bazında toplu seçim.
++    const sifirlaKutulari = [...document.querySelectorAll("input[data-sifirla]")];
++    const sifirlaOzeti = document.querySelector("[data-sifirla-ozet]");
++    function sifirlaOzetiniGuncelle() {
++        const secili = sifirlaKutulari.filter((kutu) => kutu.checked).length;
++        sifirlaOzeti.hidden = secili === 0;
++        sifirlaOzeti.querySelector("i").textContent = secili;
++    }
++    sifirlaKutulari.forEach((kutu) => kutu.addEventListener("change", sifirlaOzetiniGuncelle));
++    document.querySelectorAll("[data-hepsini-sec]").forEach((buton) => {
++        buton.addEventListener("click", () => {
++            const kutular = [...buton.closest(".etki-grup").querySelectorAll("input[data-sifirla]")];
++            const hepsiSecili = kutular.every((kutu) => kutu.checked);
++            kutular.forEach((kutu) => { kutu.checked = !hepsiSecili; });
++            buton.textContent = hepsiSecili ? "Tümünü işaretle" : "İşaretleri kaldır";
++            sifirlaOzetiniGuncelle();
++        });
++    });
++    sifirlaOzetiniGuncelle();   // geri tuşuyla dönülünce tarayıcının koruduğu seçimler
 +    </script>
 +{% endif %}
 +</div>
@@ -1734,13 +1852,13 @@
      <meta name="csrf-token" content="{{ csrf_token }}">
      <title>{% block title %}PDGM İş Takip{% endblock %}</title>
 -    <link rel="stylesheet" href="{{ url_for('static', filename='stil.css') }}?v=20260922">
-+    <link rel="stylesheet" href="{{ url_for('static', filename='stil.css') }}?v=20260926">
++    <link rel="stylesheet" href="{{ url_for('static', filename='stil.css') }}?v=20260927">
      {% block head %}{% endblock %}
  </head>
  <body class="{% block body_class %}{% endblock %}">
 --- before/static/stil.css
 +++ after/static/stil.css
-@@ -2387,3 +2387,357 @@
+@@ -2387,3 +2387,423 @@
      scrollbar-width: thin;
      scrollbar-color: #b8c3c8 transparent;
  }
@@ -2002,6 +2120,72 @@
 +
 +.fark-karti tr.onemli td {
 +    background: var(--uyari-bg);
++}
++
++.sifirla-bilgi {
++    margin: 0 0 12px;
++    padding: 12px 14px;
++    display: flex;
++    flex-wrap: wrap;
++    justify-content: space-between;
++    align-items: center;
++    gap: 10px 16px;
++    border: 1px solid #ecd08a;
++    border-radius: 10px;
++    background: var(--uyari-bg);
++}
++
++.sifirla-bilgi p {
++    max-width: 900px;
++    margin: 0;
++    color: #6b4c00;
++    font-size: 13px;
++    line-height: 1.55;
++}
++
++.sifirla-secenek {
++    padding: 10px 12px;
++    display: flex;
++    align-items: flex-start;
++    gap: 10px;
++    border-top: 1px solid #e9edef;
++    cursor: pointer;
++}
++
++.sifirla-secenek input {
++    width: 18px;
++    height: 18px;
++    margin: 1px 0 0;
++    flex: none;
++    accent-color: var(--kotu);
++}
++
++.sifirla-secenek span {
++    display: grid;
++    gap: 2px;
++    font-size: 13px;
++}
++
++.sifirla-secenek small {
++    color: var(--soluk);
++    font-size: 12px;
++}
++
++.sifirla-secenek:has(input:checked) {
++    background: var(--kotu-bg);
++}
++
++.sifirla-secenek:has(input:checked) strong {
++    color: var(--kotu);
++}
++
++.onizleme-aksiyon p b {
++    color: #ffd48a;
++    font-weight: 700;
++}
++
++.onizleme-aksiyon p b i {
++    font-style: normal;
 +}
 +
 +.onizleme-bilgi ul {
@@ -3048,6 +3232,144 @@
 +                return yanit.get_data(as_text=True)
 +            yield onizle
 +        return baglam()
++
++
++if __name__ == '__main__':
++    unittest.main()
+--- before/tests/test_tamamlanan_sifirla.py
++++ after/tests/test_tamamlanan_sifirla.py
+@@ -0,0 +1,135 @@
++"""Import önizlemesinde "Tamamlanan adedi sıfırla" seçeneği; geçici klasörde çalışır."""
++import copy
++import re
++import shutil
++import unittest
++from pathlib import Path
++from unittest.mock import patch
++
++import depo
++import excel_araclari as ex
++from tests import test_excel_sync as fixtures, test_ui as ui
++from tests.test_excel_sync import row
++
++
++class TamamlananSifirlaTests(unittest.TestCase):
++    setUp = fixtures.SyncTests.setUp
++    book = fixtures.SyncTests.book
++    load_app = ui.UITests.load_app
++
++    def yukle(self, sayfalar, **kw):
++        yol = self.book(sayfalar)
++        def snapshot(_):
++            hedef = self.root / 'snapshot.xlsx'; shutil.copy2(yol, hedef); return str(hedef)
++        with patch.object(ex, 'excel_deger_snapshot_olustur', snapshot):
++            return ex.excelden_aktar(str(yol), 'tester', **kw)
++
++    def hazirla(self):
++        """1: DİZGİDE 3/10 (operatör girdi), 2: TESLİM 5/5, 3: DİZGİDE 0/4, 4: DİZGİDE 2/6 değişmeyecek."""
++        self.yukle({'MAKİNE': [row(1, qty=10, status='DİZGİDE', end='2099-12-01'),
++                               row(2, qty=5, status='TESLİM EDİLDİ', actual='2026-09-20', stock='B'),
++                               row(3, qty=4, status='DİZGİDE', end='2099-12-01', stock='C'),
++                               row(4, qty=6, status='DİZGİDE', end='2099-12-01', stock='D')]})
++        k = {x['sira']: x for x in depo._kartlar}
++        depo.kart_bitir(k[1]['id'], 3, 'op', 'operator', 'makine', aciklama='3 adet bitti')
++        depo.kart_bitir(k[4]['id'], 2, 'op', 'operator', 'makine')
++        # Yeni Excel: 1 ve 3 tarih değiştirir, 2 DİZGİDE'ye geri döner, 4 aynı kalır.
++        yeni = {'MAKİNE': [row(1, qty=10, status='DİZGİDE', end='2099-12-05'),
++                           row(2, qty=5, status='DİZGİDE', end='2099-12-05', stock='B'),
++                           row(3, qty=4, status='DİZGİDE', end='2099-12-05', stock='C'),
++                           row(4, qty=6, status='DİZGİDE', end='2099-12-01', stock='D')]}
++        return {x['sira']: x['id'] for x in depo._kartlar}, yeni
++
++    def kart(self, kart_id):
++        return depo.kart_getir(kart_id)
++
++    def test_onizleme_yalniz_dizgide_kalan_ve_guncellenen_kartlari_sunar(self):
++        idler, yeni = self.hazirla()
++        onizleme = self.yukle(yeni, onizleme=True)
++        # 3'te tamamlanan 0 (sıfırlanacak bir şey yok), 4 güncellenmiyor.
++        self.assertEqual(onizleme['sifirlanabilir'], sorted([idler[1], idler[2]]))
++        kartlar = {d['id']: d for d in onizleme['degisiklikler']}
++        self.assertEqual((kartlar[idler[1]]['sifirlanabilir'], kartlar[idler[1]]['tamamlanan_adet']), (True, 3))
++        self.assertEqual((kartlar[idler[2]]['sifirlanabilir'], kartlar[idler[2]]['tamamlanan_adet']), (True, 5))
++        self.assertFalse(kartlar[idler[3]]['sifirlanabilir'])
++
++    def test_secilmezse_korunur_secilirse_sifirlanir(self):
++        idler, yeni = self.hazirla()
++        once = self.kart(idler[1])
++        sonuc = self.yukle(yeni, tamamlanan_sifirla=[idler[2]])
++        self.assertEqual(sonuc['sifirlanan'], 1)
++        korunan, sifirlanan = self.kart(idler[1]), self.kart(idler[2])
++        self.assertEqual(korunan['tamamlanan_adet'], 3)                         # seçilmedi
++        self.assertEqual((sifirlanan['durum'], sifirlanan['tamamlanan_adet'], sifirlanan['bitis_zamani'],
++                          sifirlanan['baslangic_adet']), ('DİZGİDE', 0, None, 5))
++        self.assertTrue(sifirlanan['rozet'].startswith('PLANINDA'), sifirlanan['rozet'])  # "ÜRETİM BİTTİ" değil
++        self.assertEqual(korunan['rozet'].split(' (')[0], 'PLANINDA')
++        self.assertEqual(self.kart(idler[4])['tamamlanan_adet'], 2)            # dokunulmadı
++        log = [l for l in depo._loglar if l['islem'] == 'EXCEL KART GÜNCELLENDİ' and f"ID={idler[2]} " in l['detay']]
++        self.assertIn('"tamamlanan_adet": [5, 0]', log[-1]['detay'])
++        self.assertIn('1 kartın tamamlanan adedi admin seçimiyle sıfırlandı', depo._loglar[-1]['detay'])
++        # Not ve başlama bilgisi korunur.
++        self.assertEqual(korunan['aciklama'], once['aciklama'])
++
++    def test_uygun_olmayan_secim_tum_importu_iptal_eder(self):
++        idler, yeni = self.hazirla()
++        once, disk = copy.deepcopy(depo._kartlar), Path(depo.KARTLAR_DOSYA).read_bytes()
++        for secim in ([idler[4]], [idler[3]], [999]):      # değişmeyen, adedi 0 olan, olmayan kart
++            with self.subTest(secim=secim):
++                with self.assertRaisesRegex(depo.IsKuralHatasi, 'Aktarım uygulanmadı'):
++                    self.yukle(yeni, tamamlanan_sifirla=secim + [idler[1]])
++                self.assertEqual(depo._kartlar, once)
++                self.assertEqual(Path(depo.KARTLAR_DOSYA).read_bytes(), disk)
++
++    def test_plana_ve_teslimde_adet_kurali_degismez(self):
++        idler, _ = self.hazirla()
++        self.yukle({'MAKİNE': [row(1, qty=10, status='PLANA ALINDI', end='2099-12-05'),
++                               row(2, qty=5, status='TESLİM EDİLDİ', actual='2026-09-21', stock='B'),
++                               row(3, qty=4, status='DİZGİDE', end='2099-12-05', stock='C'),
++                               row(4, qty=6, status='DİZGİDE', end='2099-12-01', stock='D')]})
++        self.assertEqual(self.kart(idler[1])['tamamlanan_adet'], 0)    # PLANA: kendiliğinden 0
++        self.assertEqual(self.kart(idler[2])['tamamlanan_adet'], 5)    # TESLİM: toplam
++
++    def test_arayuz_onay_kutusu_ve_onay_akisi(self):
++        _, client = self.load_app()
++        idler, yeni = self.hazirla()
++        yol = self.book(yeni)
++
++        def snapshot(kaynak):
++            hedef = self.root / 'onizleme.xlsx'; shutil.copy2(kaynak, hedef); return str(hedef)
++
++        def onizle():
++            with patch.object(ex, 'excel_deger_snapshot_olustur', snapshot), open(yol, 'rb') as f:
++                yanit = client.post('/yonetim/yukle', data={'_csrf_token': 'test-token', 'onizleme': '1',
++                                                           'dosya': (f, 'plan.xlsx')})
++            self.assertEqual(yanit.status_code, 200)
++            return yanit.get_data(as_text=True)
++
++        def onayla(secim):
++            with patch.object(ex, 'excel_deger_snapshot_olustur', snapshot):
++                return client.post('/yonetim/yukle-onay', data={'_csrf_token': 'test-token', 'sifirla': secim})
++
++        html = onizle()
++        kutular = re.findall(r'<input type="checkbox" name="sifirla" value="(\d+)" form="onay-formu"', html)
++        self.assertEqual(sorted(map(int, kutular)), sorted([idler[1], idler[2]]))
++        self.assertIn('Şu an 3 / 10 tamamlanmış görünüyor', html)
++        self.assertIn('<form id="onay-formu"', html)
++        self.assertIn('Tümünü işaretle', html)
++
++        # Önizlemede sunulmayan kart seçilemez (form elle değiştirilmiş olsa bile).
++        yanit = onayla([str(idler[4])])
++        self.assertEqual(yanit.status_code, 409)
++        self.assertIn('önizlemede sunulmayan kart', yanit.get_data(as_text=True))
++        self.assertEqual(self.kart(idler[4])['tamamlanan_adet'], 2)
++
++        onizle()
++        yanit = onayla([str(idler[1])])
++        self.assertEqual(yanit.status_code, 302)
++        with client.session_transaction() as oturum:
++            self.assertIn('1 kartın tamamlanan adedi seçiminizle sıfırlandı', oturum['_flashes'][-1][1])
++        self.assertEqual((self.kart(idler[1])['tamamlanan_adet'], self.kart(idler[2])['tamamlanan_adet']), (0, 5))
++        self.assertIn('3 adet bitti', self.kart(idler[1])['aciklama'])
 +
 +
 +if __name__ == '__main__':

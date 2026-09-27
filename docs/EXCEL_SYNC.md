@@ -49,10 +49,10 @@ metin biçiminde taşınır; metinsel `001` ve `1` ayrı kalır.
 | toplam_adet, adet_metin, plan_hafta, plan_baslama, plan_teslim | Excel authoritative; boş tarih eski tarihi temizler |
 | gerceklesen_teslim | Boşaltma dahil Excel authoritative; bugünün tarihi uydurulmaz |
 | excel_durum, pcb, dizgi_tipi, dizgi_sorumlusu, malzeme_bekliyor | Kaynaktan güncellenir |
-| Geçerli DURUM | Excel authoritative; TESLİM EDİLDİ tarihi eksik olsa da kabul edilir, uyarı sayılır |
+| Geçerli DURUM | Excel authoritative; TESLİM EDİLDİ tarihi eksik olsa da kabul edilir, uyarı sayılır. İstisna (27.09.2026): önizlemeden onaylanan importta Excel'in durumu uygulamadakinin gerisindeyse (HAZIR < PLANA < DİZGİDE < TESLİM) kart "Karar gerekiyor" bölümüne düşer; admin Excel ile uygulama durumu arasından seçer. Öneri: kart uygulamada ilerletildiyse (başlama/teslim zamanı var) uygulamadaki durum, değilse Excel. Uygulamadaki TESLİM korunursa teslim tarihi de korunur. Önizlemesiz doğrudan import eskisi gibi Excel'i uygular |
 | Boş DURUM veya MALZEME TEDARİK / PDGM ÖNERİ | Var olan manuel workflow/adet korunur; yeni kartın durumu boş kalır |
 | Tanınmayan DURUM yazımı | Tüm import durdurulur; satır ve kabul edilen değerler listelenir |
-| Tamamlanan adet | Plan/HAZIR=0; teslim=toplam; DİZGİDE kısmi üretimi korur |
+| Tamamlanan adet | Plan/HAZIR=0; teslim=toplam; DİZGİDE kısmi üretimi korur. Önizlemede, bu importta güncellenen ve DİZGİDE kalan (tamamlanan > 0) kartlar için admin "Tamamlanan adedi sıfırla" seçebilir (varsayılan işaretsiz; sıfırlama bitiş zamanını da temizler, not/başlama korunur; önizlemede sunulmayan kart seçimi importu iptal eder) |
 | Çelişkili miktar | DİZGİDE veya workflow korunan kartta toplam, tamamlanandan küçükse tüm import iptal edilir |
 | operator, aciklama, admin_gizli | Korunur; boş operatör geçerli Excel durumunda Excel olabilir |
 | Workflow zaman damgaları | Gerçek mevcut kayıtlar korunur veya durum gerilemesinde temizlenir; import zamanı olay tarihi gibi yazılmaz |

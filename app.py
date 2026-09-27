@@ -110,6 +110,14 @@ def _guvenlik_basliklari(response):
         "Permissions-Policy",
         "camera=(), microphone=(), geolocation=()",
     )
+    # Şablonlarda satır içi <script>, style="..." ve onclick/onsubmit yoktur; tüm JS
+    # static/js/ altındadır. Yeni kod da bu kurala uymalı, yoksa tarayıcı engeller.
+    response.headers.setdefault(
+        "Content-Security-Policy",
+        "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
+        "font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; "
+        "form-action 'self'; frame-ancestors 'none'",
+    )
 
     if not request.path.startswith("/static/"):
         response.headers.setdefault(
@@ -118,6 +126,20 @@ def _guvenlik_basliklari(response):
         )
 
     return response
+
+
+@app.url_defaults
+def _statik_surum(endpoint, values):
+    """Statik dosya adresine dosyanın değişiklik zamanını ekler (?v=...).
+
+    Elle sürüm artırmaya gerek kalmaz; dosya değişince tarayıcı yenisini ister.
+    """
+    if endpoint != "static" or "v" in values or not values.get("filename"):
+        return
+    try:
+        values["v"] = int(os.stat(os.path.join(app.static_folder, values["filename"])).st_mtime)
+    except OSError:
+        pass
 
 
 
@@ -421,6 +443,26 @@ def gun_filtresi(deger):
         return "—"
     parcalar = str(deger)[:10].split("-")
     return f"{parcalar[2]}.{parcalar[1]}.{parcalar[0]}" if len(parcalar) == 3 else str(deger)
+
+
+@app.template_filter("sayi")
+def sayi_filtresi(deger, basamak=1):
+    """Ondalık sayıyı Türkçe biçimde yazar: 3.8 → 3,8; 4.0 → 4."""
+    if deger is None or deger == "":
+        return "—"
+    try:
+        sayi = round(float(deger), basamak)
+    except (TypeError, ValueError):
+        return str(deger)
+    if sayi == int(sayi):
+        return f"{int(sayi):,}".replace(",", ".")
+    return f"{sayi:,.{basamak}f}".replace(",", " ").replace(".", ",").replace(" ", ".")
+
+
+@app.template_filter("yukleme_adi")
+def yukleme_adi_filtresi(deger):
+    """Yükleme klasöründeki kayıt adından zaman/uuid önekini atar."""
+    return re.sub(r"^\d{8}_\d{6}_[0-9a-f]{8}_", "", str(deger or "")) or "—"
 
 
 @app.template_filter("onizleme_deger")
@@ -749,6 +791,15 @@ def _pano_verisi():
         "teslim_elle": farkli_stok(depo.TESLIM_EDILDI, "ELLE"),
         "teslim_eum": farkli_stok(depo.TESLIM_EDILDI, "EUM"),
     }
+
+    # Ana sayı iş emri (kart) sayısıdır; farklı stok sayısı yanında alt bilgi olarak gösterilir.
+    for anahtar, durum in (("plana_alindi", depo.PLANA_ALINDI), ("dizgide", depo.DIZGIDE),
+                           ("teslim", depo.TESLIM_EDILDI)):
+        sayac[f"{anahtar}_kart"] = sum(k.get("durum") == durum for k in kartlar)
+        for kod in ("MAKINE", "ELLE", "EUM"):
+            sayac[f"{anahtar}_kart_{kod.lower()}"] = sum(
+                k.get("durum") == durum and k.get("dizgi_kod") == kod for k in kartlar
+            )
     return {
         "kartlar": kartlar,
         "sayac": sayac,
@@ -758,6 +809,9 @@ def _pano_verisi():
 @app.route("/panel")
 @yetki("admin", "operator", "gozlemci")
 def panel():
+    # Sürüm veriden ÖNCE alınır: arada değişiklik olursa sayfa eski sürümle işaretlenir
+    # ve yoklama değişikliği yakalar (tersi değişikliği kaçırırdı).
+    surum = depo.depo_surumu()
     veri = _pano_verisi()
     kartlar = veri["kartlar"]
 
@@ -774,12 +828,15 @@ def panel():
         dizgide=[k for k in kartlar if k["durum"] == depo.DIZGIDE],
         plana_alindi=[k for k in kartlar if k["durum"] == depo.PLANA_ALINDI],
         teslim_edilen=teslim_edilen,
+        donem_ozet=_donem_ozeti(kartlar),
+        veri_surumu=surum,
     )
 
 
 @app.route("/monitor")
 @yetki("admin", "operator", "gozlemci")
 def monitor():
+    surum = depo.depo_surumu()
     veri = _pano_verisi()
     kartlar = [k for k in veri["kartlar"] if k.get("dizgi_kod") == "MAKINE"]
     for kart in kartlar:
@@ -791,19 +848,41 @@ def monitor():
         guncelleme=veri["guncelleme"],
         dizgide=[k for k in kartlar if k["durum"] == depo.DIZGIDE],
         plana_alindi=[k for k in kartlar if k["durum"] == depo.PLANA_ALINDI],
+        veri_surumu=surum,
     )
+
+
+# Operatör ekranı teslim edilmiş kartların yalnız son günlerini çizer; eskiler Pano'da.
+OPERATOR_TESLIM_GUN = 30
 
 
 @app.route("/operator")
 @yetki("admin", "operator")
 def operator():
+    surum = depo.depo_surumu()
     veri = _pano_verisi()
-    return render_template("operator.html", kartlar=veri["kartlar"], sayac=veri["sayac"])
+    sinir = (date.today() - timedelta(days=OPERATOR_TESLIM_GUN)).isoformat()
+    kartlar, eski_teslim = [], 0
+    for kart in veri["kartlar"]:
+        teslim = _teslim_tarihi(kart) if kart["durum"] == depo.TESLIM_EDILDI else None
+        if teslim and teslim < sinir:
+            eski_teslim += 1
+            continue
+        kartlar.append(kart)
+    return render_template(
+        "operator.html",
+        kartlar=kartlar,
+        sayac=veri["sayac"],
+        eski_teslim=eski_teslim,
+        teslim_gun=OPERATOR_TESLIM_GUN,
+        veri_surumu=surum,
+    )
 
 
 @app.route("/yonetim")
 @yetki("admin")
 def yonetim():
+    surum = depo.depo_surumu()
     kartlar = depo.kartlari_yonetim_getir()
     kaynakta_olmayan = [
         k
@@ -820,7 +899,15 @@ def yonetim():
         yedekler=depo.yedekleri_getir(12),
         yuklemeler=depo.yuklemeleri_getir(8),
         loglar=depo.loglari_getir(25),
+        veri_surumu=surum,
     )
+
+
+@app.route("/api/surum")
+@yetki("admin", "operator", "gozlemci")
+def api_surum():
+    """Açık ekranların "veri değişti mi / sunucu ayakta mı" yoklaması için hafif uç."""
+    return jsonify(surum=depo.depo_surumu(), zaman=datetime.now().strftime("%H:%M:%S"))
 
 
 
@@ -1115,6 +1202,11 @@ def _import_mesaji(sonuc):
         mesaj += f" · {sonuc['elle_dizgi_satir']} kart ELDE DİZGİ sayfasından."
     if sonuc.get("eum_dizgi_satir"):
         mesaj += f" · {sonuc['eum_dizgi_satir']} kart EÜM sayfasından."
+    if sonuc.get("gerileme"):
+        mesaj += (f" · {sonuc['gerileme']} kartta Excel uygulamanın gerisindeydi; "
+                  f"{sonuc.get('gerileme_korunan', 0)} kartta uygulamadaki durum korundu.")
+    if sonuc.get("sifirlanan"):
+        mesaj += f" · {sonuc['sifirlanan']} kartın tamamlanan adedi seçiminizle sıfırlandı."
     if sonuc.get("durum_iyilesen"):
         mesaj += (
             f" · {sonuc['durum_iyilesen']} kartın durumu Excel'den güncellendi."
@@ -1165,7 +1257,8 @@ def yukle():
             with open(yol, "rb") as kaynak:
                 dosya_hash = hashlib.file_digest(kaynak, "sha256").hexdigest()
             session["import_onizleme"] = {"dosya": kayit_adi, "hash": dosya_hash,
-                "surum": sonuc["surum"], "kaynak_surum": sonuc["kaynak_surum"]}
+                "surum": sonuc["surum"], "kaynak_surum": sonuc["kaynak_surum"],
+                "sifirlanabilir": sonuc.get("sifirlanabilir", [])}
             return render_template("import_onizleme.html", sonuc=sonuc, dosya=guvenli_ad)
         sonuc = ex.excelden_aktar(yol, session["kullanici"])
         mesaj = _import_mesaji(sonuc)
@@ -1199,8 +1292,29 @@ def yukle_onay():
         with open(yol, "rb") as kaynak:
             if hashlib.file_digest(kaynak, "sha256").hexdigest() != bekleyen["hash"]:
                 raise depo.IsKuralHatasi("Dosya önizlemeden sonra değişti. Dosyayı yeniden seçin.")
+        # Önizlemede "Tamamlanan adedi sıfırla" işaretlenen kartlar; yalnız o önizlemede
+        # sunulan kartlar kabul edilir (depo uygulama anında uygunluğu yeniden denetler).
+        try:
+            sifirla = sorted({int(deger) for deger in request.form.getlist("sifirla")})
+        except ValueError:
+            raise depo.IsKuralHatasi("Geçersiz kart seçimi. Dosyayı yeniden seçin.") from None
+        disarida = set(sifirla) - set(bekleyen.get("sifirlanabilir") or [])
+        if disarida:
+            raise depo.IsKuralHatasi(
+                "Tamamlanan adedi sıfırlanmak üzere önizlemede sunulmayan kart seçildi "
+                f"(ID: {', '.join(map(str, sorted(disarida)))}). Dosyayı yeniden seçin."
+            )
+        # Excel'in uygulamanın gerisinde kaldığı kartlar için seçilen durumlar. Hangi
+        # kartların karar gerektirdiğini ve seçeneklerini depo yeniden hesaplar;
+        # eksik, fazla veya aralık dışı seçim tüm aktarımı iptal eder.
+        try:
+            gerileme_secimleri = {int(ad.split("_", 1)[1]): deger for ad, deger in request.form.items()
+                                  if ad.startswith("gerileme_")}
+        except ValueError:
+            raise depo.IsKuralHatasi("Geçersiz durum seçimi. Dosyayı yeniden seçin.") from None
         sonuc = ex.excelden_aktar(yol, session["kullanici"], beklenen_surum=bekleyen["surum"],
-                                 beklenen_kaynak_surum=bekleyen["kaynak_surum"])
+                                 beklenen_kaynak_surum=bekleyen["kaynak_surum"], tamamlanan_sifirla=sifirla,
+                                 gerileme_secimleri=gerileme_secimleri)
     except (depo.DepoHatasi, ex.ExcelAktarimHatasi, OSError) as hata:
         sorunlar = getattr(hata, "sorunlar", None) or [str(hata)]
         return render_template("import_onizleme.html", hata=str(hata), hata_turu="onay",
@@ -1501,6 +1615,7 @@ def api_panel_teslimler():
                 "talep_sahibi": k.get("talep_sahibi"),
                 "aciklama": k.get("aciklama"),
                 "stok_no": k.get("stok_no"),
+                "pcb": k.get("pcb"),
                 "toplam_adet": k.get("toplam_adet"),
                 "plan_baslama": gun_filtresi(k.get("plan_baslama")),
                 "teslim": gun_filtresi(_teslim_tarihi(k)),

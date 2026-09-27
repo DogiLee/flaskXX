@@ -59,6 +59,7 @@
     {% set pasifler = d|selectattr("tur", "equalto", "pasif")|list %}
     {% set geri_gelenler = d|selectattr("tur", "equalto", "geri")|list %}
     {% set ayrilanlar = d|selectattr("tur", "equalto", "ayrildi")|list %}
+    {% set gerilenler = d|selectattr("tur", "equalto", "gerileme")|list %}
     {% set pasiflesecek = (sonuc.pasife_alinan or 0) + (sonuc.ayrilan or 0) %}
     {% set eksik_sayfalar = (r.sayfalar or [])|selectattr("bulunamadi")|list %}
     {% set toplu_pasif = sonuc.pasife_alinan and sonuc.mevcut_aktif and sonuc.pasife_alinan * 10 >= sonuc.mevcut_aktif * 3 %}
@@ -73,6 +74,13 @@
             <p class="soluk"><strong>{{ dosya }}</strong> dosyasından {{ sonuc.satir }} kayıt okundu ve sistemdeki kartlarla karşılaştırıldı. Aşağıdakiler, onaylarsanız ne olacağını gösterir.</p>
         </div>
     </section>
+
+    {% if gerilenler %}
+    <a class="bildirim uyari karar-bandi" href="#karar-gerekiyor">
+        <strong>{{ gerilenler|length }} kartta Excel uygulamanın gerisinde.</strong>
+        Onaylamadan önce bu kartların hangi durumda kalacağını seçin ↓
+    </a>
+    {% endif %}
 
     {% if toplu_pasif or eksik_sayfalar %}
     <div class="bildirim hata onizleme-dikkat" role="alert">
@@ -108,6 +116,81 @@
             <small>Aktarımı engellemez; aşağıda neyi etkilediği yazıyor.</small>
         </article>
     </section>
+
+    {% if gerilenler %}
+    <section class="panel-kutu karar-bolumu" id="karar-gerekiyor">
+        <div class="panel-baslik">
+            <div>
+                <p class="ust-etiket">KARAR GEREKİYOR · {{ gerilenler|length }} KART</p>
+                <h2>Excel'in uygulamanın gerisinde kaldığı kartlar</h2>
+                <p class="panel-aciklama">Bu kartlarda Excel, uygulamadaki durumdan daha geri bir durum söylüyor (ör. operatör kartı dizgiye almış ama Excel hâlâ PLANA ALINDI diyor). Her kart için onaydan sonraki durumu seçin. Önerilen seçim: kart uygulamada operatör tarafından ilerletildiyse uygulamadaki durum korunur; durum yalnız Excel'den geldiyse Excel'e uyulur.</p>
+            </div>
+            {% if gerilenler|length > 1 %}
+            <div class="buton-grup">
+                <button type="button" class="buton buton-hayalet buton-kucuk" data-gerileme-hepsi="uygulama">Hepsinde uygulamadakini koru</button>
+                <button type="button" class="buton buton-hayalet buton-kucuk" data-gerileme-hepsi="excel">Hepsini Excel'e göre ayarla</button>
+            </div>
+            {% endif %}
+        </div>
+        <div class="karar-listesi">
+            {% for k in gerilenler %}{% set g = k.gerileme %}
+            <article class="karar-karti" data-gerileme-kart>
+                <header>
+                    <strong>{{ k.talep_no }} · {{ k.stok_no }}</strong>
+                    {{ tur_rozeti(k.sayfa) }}
+                    <small>NO {{ k.sira or "—" }} · Kart #{{ k.id }}</small>
+                </header>
+                <div class="karar-karsilastirma">
+                    <div>
+                        <span>Uygulamada</span>
+                        {{ durum_rozeti(g.uygulama_durum) }}
+                        <small>{{ g.onceki_tamamlanan }} / {{ k.toplam_adet }} adet tamamlandı{% if g.baslama_zamani %} · başlama {{ g.baslama_zamani|gun }}{% endif %}{% if g.onceki_gerceklesen %} · teslim {{ g.onceki_gerceklesen|gun }}{% endif %}{% if g.operator and g.operator != "Excel" %} · {{ g.operator }}{% endif %}</small>
+                    </div>
+                    <div>
+                        <span>Excel'de</span>
+                        {{ durum_rozeti(g.excel_durum, k.excel_durum) }}
+                        {% if g.onceki_excel_durum %}<small>Önceki yüklemede Excel: {{ g.onceki_excel_durum }}</small>{% endif %}
+                    </div>
+                </div>
+                <p class="karar-neden">{% if g.uygulamada %}Kart uygulamada ilerletilmiş; Excel henüz güncellenmemiş olabilir.{% else %}Bu durum daha önce Excel'den gelmişti; Excel'de geri alınmış görünüyor.{% endif %}</p>
+                <label class="karar-secim">
+                    <span>Onaydan sonraki durum</span>
+                    <select name="gerileme_{{ k.id }}" form="onay-formu" data-gerileme-secim
+                            data-excel="{{ g.excel_durum }}" data-uygulama="{{ g.uygulama_durum }}">
+                        {% for s in g.secenekler %}
+                        <option value="{{ s }}"{% if s == g.onerilen %} selected{% endif %}>{{ s }}{% if s == g.excel_durum %} · Excel'deki{% elif s == g.uygulama_durum %} · uygulamadaki{% endif %}{% if s == g.onerilen %} (önerilen){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <p class="karar-sonuc" data-gerileme-sonuc aria-live="polite"></p>
+                {% if "DİZGİDE" in g.secenekler and g.onceki_tamamlanan > 0 %}
+                <label class="sifirla-secenek">
+                    <input type="checkbox" name="sifirla" value="{{ k.id }}" form="onay-formu" data-sifirla data-gerileme-sifirla>
+                    <span>
+                        <strong>Tamamlanan adedi sıfırla</strong>
+                        <small>Şu an {{ g.onceki_tamamlanan }} / {{ k.toplam_adet }}. Yalnız DİZGİDE seçiliyken kullanılabilir; işaretlemezseniz korunur.</small>
+                    </span>
+                </label>
+                {% endif %}
+                {% set diger = k.farklar|rejectattr("anahtar", "in", ["source_active", "durum", "tamamlanan_adet"])|list %}
+                {% if diger %}
+                <details class="acilir karar-diger">
+                    <summary>Excel'den gelen diğer değişiklikler ({{ diger|length }})</summary>
+                    <table>
+                        <thead><tr><th>Alan</th><th>Şu an</th><th>Onaydan sonra</th></tr></thead>
+                        <tbody>
+                        {% for f in diger %}
+                            <tr><td>{{ f.alan }}</td><td class="eski">{{ f.eski|onizleme_deger(f.anahtar) }}</td><td class="yeni">{{ f.yeni|onizleme_deger(f.anahtar) }}</td></tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </details>
+                {% endif %}
+            </article>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
 
     <section class="panel-kutu">
         <div class="panel-baslik">
@@ -255,6 +338,15 @@
         <div class="etki-grup">
             <h3><span class="durum-rozet {{ rozet }}">{{ grup|length }}</span> Kart {{ baslik }}</h3>
             <p class="etki-aciklama">{{ aciklama }}</p>
+            {% set sifirlanabilirler = grup|selectattr("sifirlanabilir")|list %}
+            {% if sifirlanabilirler %}
+            <div class="sifirla-bilgi">
+                <p><strong>Tamamlanan adet korunacak:</strong> {{ sifirlanabilirler|length }} kart onaydan sonra DİZGİDE kalıyor ve operatörün girdiği tamamlanan adet olduğu gibi korunur. Excel'e göre üretime baştan başlanacaksa kartın altındaki kutuyu işaretleyin: tamamlanan adet 0 olur ve bitiş zamanı temizlenir; notlar ve başlama bilgisi korunur.</p>
+                {% if sifirlanabilirler|length > 1 %}
+                <button type="button" class="buton buton-hayalet buton-kucuk" data-hepsini-sec>Tümünü işaretle</button>
+                {% endif %}
+            </div>
+            {% endif %}
             <div class="fark-listesi">
                 {% for k in grup %}
                 <article class="fark-karti">
@@ -277,6 +369,15 @@
                         {% endfor %}
                         </tbody>
                     </table>
+                    {% if k.sifirlanabilir %}
+                    <label class="sifirla-secenek">
+                        <input type="checkbox" name="sifirla" value="{{ k.id }}" form="onay-formu" data-sifirla>
+                        <span>
+                            <strong>Tamamlanan adedi sıfırla</strong>
+                            <small>Şu an {{ k.tamamlanan_adet }} / {{ k.toplam_adet }} tamamlanmış görünüyor. İşaretlemezseniz korunur.</small>
+                        </span>
+                    </label>
+                    {% endif %}
                 </article>
                 {% endfor %}
             </div>
@@ -316,7 +417,8 @@
         <ul>
             <li>Önce kart, işlem logu ve yükleme geçmişi dosyalarının yedeği alınır.</li>
             <li>Değişiklikler tek seferde uygulanır; bir hata olursa hiçbiri uygulanmaz.</li>
-            <li>Excel'de boş bırakılan tarih, kartta da temizlenir. DURUM boş veya tanınmıyorsa kartın mevcut iş akışı korunur.</li>
+            <li>Excel'de boş bırakılan tarih, kartta da temizlenir. DURUM boş ya da MALZEME TEDARİK / PDGM ÖNERİ ise kartın mevcut iş akışı korunur; tanınmayan DURUM aktarımı durdurur.</li>
+            <li>Tamamlanan adet: PLANA ALINDI olan kartta 0'a, TESLİM EDİLDİ olan kartta toplam adede kendiliğinden eşitlenir. DİZGİDE kalan kartta korunur; yalnız işaretlediğiniz kartlarda sıfırlanır.</li>
             <li>Bu sayfa açıkken dosya veya kartlar değişirse aktarım uygulanmaz ve yeni önizleme istenir.</li>
         </ul>
     </section>
@@ -324,26 +426,20 @@
     <div class="onizleme-aksiyon">
         <p>
             <strong>{{ sonuc.yeni }} yeni · {{ guncellenen }} güncelleme · {{ pasiflesecek }} pasifleşme</strong>
-            <span>Onaylayana kadar hiçbir kayıt değişmez.</span>
+            <span>Onaylayana kadar hiçbir kayıt değişmez.{% if gerilenler %}<b data-gerileme-ozet> · <a href="#karar-gerekiyor">{{ gerilenler|length }} kart için durum kararı</a>: <i>0</i> kartta uygulamadaki durum korunacak.</b>{% endif %}<b data-sifirla-ozet hidden> · <i>0</i> kartta tamamlanan adet sıfırlanacak.</b></span>
         </p>
         <div class="buton-grup">
             <a class="buton buton-hayalet" href="{{ url_for('yonetim') }}">Vazgeç</a>
-            <form action="{{ url_for('yukle_onay') }}" method="post" data-tek-gonderim>
+            <form id="onay-formu" action="{{ url_for('yukle_onay') }}" method="post" data-tek-gonderim>
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                 <button class="buton {{ 'buton-tehlike' if toplu_pasif else 'buton-basari' }}" type="submit">{{ "Yine de uygula" if toplu_pasif else "Değişiklikleri uygula" }}</button>
             </form>
         </div>
     </div>
-    <script>
-    // Excel COM okuması birkaç saniye sürer; ikinci tıklama kullanılmış önizlemeye çarpmasın.
-    document.querySelectorAll("form[data-tek-gonderim]").forEach((form) => {
-        form.addEventListener("submit", () => {
-            const buton = form.querySelector("button[type=submit]");
-            buton.disabled = true;
-            buton.textContent = "Uygulanıyor…";
-        });
-    });
-    </script>
 {% endif %}
 </div>
+{% endblock %}
+
+{% block scripts %}
+{% if not hata %}<script src="{{ url_for('static', filename='js/onizleme.js') }}"></script>{% endif %}
 {% endblock %}

@@ -15,23 +15,26 @@
     <h1>PDGM İŞ TAKİP</h1>
     <p class="alt">Prototip Kart Dizgi Atölyesi</p>
 
-    {% if hata %}<div class="bildirim hata">{{ hata }}</div>{% endif %}
+    {% for kategori, mesaj in get_flashed_messages(with_categories=true) %}
+        <div class="bildirim {{ kategori }}"{% if kategori == 'hata' %} role="alert"{% endif %}>{{ mesaj }}</div>
+    {% endfor %}
+    {% if hata %}<div class="bildirim hata" role="alert">{{ hata }}</div>{% endif %}
 
-    <form method="post" autocomplete="off" class="giris-form">
+    <form method="post" class="giris-form">
         <div class="alan">
             <label for="kullanici">Kullanıcı adı</label>
-            <input type="text" id="kullanici" name="kullanici" autocomplete="username" autofocus required>
+            <input type="text" id="kullanici" name="kullanici" autocomplete="username" autocapitalize="none" autofocus required>
         </div>
         <div class="alan">
             <label for="sifre">Şifre</label>
             <input type="password" id="sifre" name="sifre" autocomplete="current-password" required>
-            <button class="buton buton-ana tam-genislik" type="submit">Giriş Yap</button>
-        </form>
-    
-        <form method="post" action="{{ url_for('giris_gozlemci') }}" class="giris-gozlemci-form" style="margin-top: 12px;">
-            <button class="buton buton-hayalet tam-genislik" type="submit">Gözlemci olarak giriş yap</button>
-        </form>
-    
+        </div>
+        <button class="buton buton-ana tam-genislik" type="submit">Giriş Yap</button>
+    </form>
+
+    <form method="post" action="{{ url_for('giris_gozlemci') }}" class="giris-gozlemci-form">
+        <button class="buton buton-hayalet tam-genislik" type="submit">Gözlemci olarak giriş yap</button>
+    </form>
 </main>
 </body>
 </html>

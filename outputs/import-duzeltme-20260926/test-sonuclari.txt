@@ -10,6 +10,12 @@ Application source stays exportable while docs, tests and tooling stay out. ... 
 test_real_snapshot_hidden_identity_1904_and_reupload (test_excel_com.ExcelCOMTests.test_real_snapshot_hidden_identity_1904_and_reupload) ... ok
 test_text_cells_not_reinterpreted_by_excel (test_excel_com.ExcelCOMTests.test_text_cells_not_reinterpreted_by_excel) ... ok
 test_text_identifiers_keep_leading_zeros_and_long_digits (test_excel_com.ExcelCOMTests.test_text_identifiers_keep_leading_zeros_and_long_digits) ... ok
+test_excel_e_gore_geri_alma_ve_ara_durum (test_excel_geride.ExcelGerideTests.test_excel_e_gore_geri_alma_ve_ara_durum) ... ok
+test_gecersiz_secimler_aktarimi_iptal_eder (test_excel_geride.ExcelGerideTests.test_gecersiz_secimler_aktarimi_iptal_eder) ... ok
+test_onizleme_gerileyen_kartlari_ve_onerileri_gosterir (test_excel_geride.ExcelGerideTests.test_onizleme_gerileyen_kartlari_ve_onerileri_gosterir) ... ok
+test_onizlemesiz_dogrudan_import_eskisi_gibi_excel_i_uygular (test_excel_geride.ExcelGerideTests.test_onizlemesiz_dogrudan_import_eskisi_gibi_excel_i_uygular) ... ok
+test_secimler_uygulanir (test_excel_geride.ExcelGerideTests.test_secimler_uygulanir) ... ok
+Uygulamada TESLÝM, Excel PLANA: PLANA / DÝZGÝDE / TESLÝM arasýndan seçilir. ... ok
 test_1904_numeric_dates (test_excel_sync.SyncTests.test_1904_numeric_dates) ... ok
 test_actual_date_clear_and_change (test_excel_sync.SyncTests.test_actual_date_clear_and_change) ... ok
 test_admin_note_edit_does_not_invent_imported_event_dates (test_excel_sync.SyncTests.test_admin_note_edit_does_not_invent_imported_event_dates) ... ok
@@ -76,7 +82,11 @@ Eski kodda: MAKÝNE satýrý silinince ELDE satýrý MAKÝNE kartýnýn ID'sini alýyordu
 test_excelde_teslim_edilen_kart_planda_gorunmez (test_onceki_hatalar.OncekiHatalarTests.test_excelde_teslim_edilen_kart_planda_gorunmez) ... ok
 Eskiden: NO 7 yeni talebe verilince yeni talep TESLÝM EDÝLDÝ ve eski notla görünüyordu. ... ok
 test_taninmayan_durum_importu_durdurur (test_onceki_hatalar.OncekiHatalarTests.test_taninmayan_durum_importu_durdurur) ... ok
+test_onizleme_yalniz_dizgide_kalan_ve_guncellenen_kartlari_sunar (test_tamamlanan_sifirla.TamamlananSifirlaTests.test_onizleme_yalniz_dizgide_kalan_ve_guncellenen_kartlari_sunar) ... ok
+test_plana_ve_teslimde_adet_kurali_degismez (test_tamamlanan_sifirla.TamamlananSifirlaTests.test_plana_ve_teslimde_adet_kurali_degismez) ... ok
+test_secilmezse_korunur_secilirse_sifirlanir (test_tamamlanan_sifirla.TamamlananSifirlaTests.test_secilmezse_korunur_secilirse_sifirlanir) ... ok
+test_uygun_olmayan_secim_tum_importu_iptal_eder (test_tamamlanan_sifirla.TamamlananSifirlaTests.test_uygun_olmayan_secim_tum_importu_iptal_eder) ... ok
 test_monitor_dataset_and_badge_are_local (test_ui.UITests.test_monitor_dataset_and_badge_are_local) ... ok
 test_panel_delivery_api_excludes_deleted_source_rows (test_ui.UITests.test_panel_delivery_api_excludes_deleted_source_rows) ... ok
-Ran 84 tests in 81.850s
+Ran 96 tests in 97.486s
 OK

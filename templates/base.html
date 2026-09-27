@@ -5,10 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token }}">
     <title>{% block title %}PDGM İş Takip{% endblock %}</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='stil.css') }}?v=20260926">
+    <link rel="stylesheet" href="{{ url_for('static', filename='stil.css') }}">
     {% block head %}{% endblock %}
 </head>
-<body class="{% block body_class %}{% endblock %}">
+<body class="{% block body_class %}{% endblock %}"
+      data-kullanici="{{ oturum_kullanici or '' }}"
+      data-ad="{{ oturum_ad or oturum_kullanici or '' }}"
+      {% if veri_surumu %}data-veri-surumu="{{ veri_surumu }}"{% endif %}>
+{% block ust_cubuk %}
 <header class="ust-cubuk">
     <a href="{{ url_for('ana') }}" class="marka-link">
         <span class="marka-isaret">
@@ -21,26 +25,23 @@
 
     <nav class="ana-nav" aria-label="Ana menü">
         {% if oturum_rol in ["admin", "operator", "gozlemci"] %}
-            <a class="{% if request.endpoint == 'panel' %}aktif{% endif %}" href="{{ url_for('panel') }}">Pano</a>
+            <a class="{% if request.endpoint == 'panel' %}aktif{% endif %}" href="{{ url_for('panel') }}"{% if request.endpoint == 'panel' %} aria-current="page"{% endif %}>Pano</a>
         {% endif %}
-    
         {% if oturum_rol in ["admin", "operator"] %}
-            <a class="{% if request.endpoint == 'operator' %}aktif{% endif %}" href="{{ url_for('operator') }}">Operatör</a>
+            <a class="{% if request.endpoint == 'operator' %}aktif{% endif %}" href="{{ url_for('operator') }}"{% if request.endpoint == 'operator' %} aria-current="page"{% endif %}>Operatör</a>
         {% endif %}
-    
         {% if oturum_rol in ["admin", "operator", "gozlemci"] %}
-            <a class="{% if request.endpoint == 'monitor' %}aktif{% endif %}" href="{{ url_for('monitor') }}">Monitör</a>
+            <a class="{% if request.endpoint == 'monitor' %}aktif{% endif %}" href="{{ url_for('monitor') }}"{% if request.endpoint == 'monitor' %} aria-current="page"{% endif %}>Monitör</a>
         {% endif %}
-    
         {% if oturum_rol == "admin" %}
-            <a class="{% if request.endpoint == 'yonetim' %}aktif{% endif %}" href="{{ url_for('yonetim') }}">Yönetim</a>
+            <a class="{% if request.endpoint == 'yonetim' %}aktif{% endif %}" href="{{ url_for('yonetim') }}"{% if request.endpoint == 'yonetim' %} aria-current="page"{% endif %}>Yönetim</a>
         {% endif %}
     </nav>
 
     <div class="oturum">
         <div class="oturum-metin">
             <strong>{{ oturum_ad or oturum_kullanici }}</strong>
-            <small>{{ oturum_rol|upper }}</small>
+            <small>{{ {"admin": "YÖNETİCİ", "operator": "OPERATÖR", "gozlemci": "GÖZLEMCİ"}.get(oturum_rol, (oturum_rol or "")|upper) }}</small>
         </div>
         {% if oturum_kullanici %}
         <form method="post" action="{{ url_for('cikis') }}">
@@ -49,14 +50,20 @@
         </form>
         {% endif %}
     </div>
+
+    <div id="veri-bandi" class="veri-bandi" role="status" hidden>
+        <span data-veri-bandi-metin></span>
+        <button type="button" class="buton buton-kucuk" data-veri-bandi-yenile>Yenile</button>
+    </div>
 </header>
+{% endblock %}
 
 <main class="sayfa">
     {% with mesajlar = get_flashed_messages(with_categories=true) %}
         {% if mesajlar %}
         <section class="bildirimler" aria-live="polite">
             {% for kategori, mesaj in mesajlar %}
-                <div class="bildirim {{ kategori }}">{{ mesaj }}</div>
+                <div class="bildirim {{ kategori }}"{% if kategori == 'hata' %} role="alert"{% endif %}>{{ mesaj }}</div>
             {% endfor %}
         </section>
         {% endif %}
@@ -67,68 +74,21 @@
 
 <div id="toast-alani" class="toast-alani" aria-live="polite"></div>
 
-<script>
-function csrfToken() {
-    return document.querySelector('meta[name="csrf-token"]')?.content || "";
-}
+<dialog id="onay-dialog" class="modal modal-dar" aria-labelledby="onay-baslik">
+    <form method="dialog" class="modal-kutu">
+        <div class="modal-baslik">
+            <div><p class="ust-etiket" id="onay-etiket">ONAY</p><h2 id="onay-baslik">Emin misiniz?</h2></div>
+            <button class="ikon-buton" type="button" data-dialog-kapat aria-label="Kapat">×</button>
+        </div>
+        <p id="onay-mesaj" class="onay-mesaj"></p>
+        <div class="modal-aksiyon">
+            <button type="button" class="buton buton-hayalet" data-dialog-kapat>Vazgeç</button>
+            <button type="submit" class="buton buton-ana" id="onay-evet" value="evet">Devam et</button>
+        </div>
+    </form>
+</dialog>
 
-function aramaMetni(deger) {
-    return String(deger || "").normalize("NFC").toLocaleLowerCase("tr-TR").normalize("NFC").trim();
-}
-
-async function pdgmFetch(url, options = {}) {
-    const headers = new Headers(options.headers || {});
-    headers.set("X-CSRF-Token", csrfToken());
-
-    if (options.body && !(options.body instanceof FormData) && !headers.has("Content-Type")) {
-        headers.set("Content-Type", "application/json");
-    }
-
-    const response = await fetch(url, {credentials: "same-origin", ...options, headers});
-    const contentType = response.headers.get("content-type") || "";
-    if (response.status === 401 || response.redirected) {
-        throw new Error("Oturum sona erdi. İşlem kaydedilmedi; tekrar giriş yapın.");
-    }
-    if (!contentType.includes("application/json")) {
-        throw new Error("Sunucudan beklenmeyen yanıt alındı. İşlemin kaydedildiği doğrulanamadı.");
-    }
-    const data = await response.json();
-
-    if (!response.ok) {
-        throw new Error(data.hata || data.detail || "İşlem tamamlanamadı.");
-    }
-    return data;
-}
-
-function toast(mesaj, tip = "basari") {
-    const alan = document.getElementById("toast-alani");
-    if (!alan) return;
-
-    const kutu = document.createElement("div");
-    kutu.className = `toast ${tip}`;
-    kutu.textContent = mesaj;
-    alan.appendChild(kutu);
-
-    requestAnimationFrame(() => kutu.classList.add("goster"));
-    window.setTimeout(() => {
-        kutu.classList.remove("goster");
-        window.setTimeout(() => kutu.remove(), 200);
-    }, 3200);
-}
-
-function hataMesaji(hata) {
-    toast(hata?.message || "Beklenmeyen bir hata oluştu.", "hata");
-}
-
-function dialogKapat(dialog) {
-    if (dialog?.open) dialog.close();
-}
-
-document.addEventListener("click", (event) => {
-    const kapat = event.target.closest("[data-dialog-kapat]");
-    if (kapat) dialogKapat(kapat.closest("dialog"));
-});
-</script>
+<script src="{{ url_for('static', filename='js/ortak.js') }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

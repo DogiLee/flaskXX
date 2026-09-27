@@ -1134,9 +1134,11 @@ def _sayfa_satirlarini_coz(ws, sayfa_adi, dizgi_tipi, anahtar_gruplari, parsed_l
     return bitir()
 
 
-def excelden_aktar(dosya_yolu, kullanici, onizleme=False, beklenen_surum=None, beklenen_kaynak_surum=None):
+def excelden_aktar(dosya_yolu, kullanici, onizleme=False, beklenen_surum=None, beklenen_kaynak_surum=None,
+                   tamamlanan_sifirla=None, gerileme_secimleri=None):
     with _import_kilidi:
-        return _excelden_aktar(dosya_yolu, kullanici, onizleme, beklenen_surum, beklenen_kaynak_surum)
+        return _excelden_aktar(dosya_yolu, kullanici, onizleme, beklenen_surum, beklenen_kaynak_surum,
+                               tamamlanan_sifirla, gerileme_secimleri)
 
 
 def _sayfa_bul(wb, sayfa_adi):
@@ -1145,7 +1147,8 @@ def _sayfa_bul(wb, sayfa_adi):
     return next((wb[ad] for ad in wb.sheetnames if _sadelestir(ad) == hedef), None)
 
 
-def _excelden_aktar(dosya_yolu, kullanici, onizleme=False, beklenen_surum=None, beklenen_kaynak_surum=None):
+def _excelden_aktar(dosya_yolu, kullanici, onizleme=False, beklenen_surum=None, beklenen_kaynak_surum=None,
+                    tamamlanan_sifirla=None, gerileme_secimleri=None):
     snapshot_yolu = None
     wb = None
 
@@ -1218,6 +1221,10 @@ def _excelden_aktar(dosya_yolu, kullanici, onizleme=False, beklenen_surum=None, 
         raise ExcelAktarimHatasi("Excel'in hesaplanan değerleri önizlemeden sonra değişti. Yeni önizleme oluşturun.")
     uygula = depo.excel_import_onizle if onizleme else depo.excel_import_uygula
     secenekler = {"beklenen_surum": beklenen_surum} if beklenen_surum is not None else {}
+    if tamamlanan_sifirla:
+        secenekler["tamamlanan_sifirla"] = tamamlanan_sifirla
+    if gerileme_secimleri is not None:
+        secenekler["gerileme_secimleri"] = gerileme_secimleri
     sonuc = uygula(
         dosya_adi=os.path.basename(dosya_yolu),
         kullanici=kullanici,
