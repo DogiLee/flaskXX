@@ -11,6 +11,12 @@ from tests import test_excel_sync as fixtures
 from tests.test_excel_sync import ROOT, row
 
 
+def onizleme_token(client):
+    """Önizleme sayfasının onay formunda gönderdiği token (oturumdaki son önizleme)."""
+    with client.session_transaction() as oturum:
+        return (oturum.get('import_onizleme') or {}).get('token', '')
+
+
 class UITests(unittest.TestCase):
     setUp = fixtures.SyncTests.setUp
     book = fixtures.SyncTests.book

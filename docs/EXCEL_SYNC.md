@@ -44,10 +44,10 @@ metin biçiminde taşınır; metinsel `001` ve `1` ayrı kalır.
 
 | Alan | Yeni upload kuralı |
 |---|---|
-| Kaynak kimliği | Sabit; kaynak sayfası + NO/PDGM_ROW_ID. Aynı sayfa+NO farklı Talep NO taşırsa eski kart geçmişiyle ayrılır (pasif, kimlik `NO:x~kartID`), yeni talep için temiz kart açılır |
+| Kaynak kimliği | Sabit; kaynak sayfası + NO/PDGM_ROW_ID. Aynı sayfa+NO farklı Talep NO taşırsa eski kart geçmişiyle ayrılır (pasif, kimlik `NO:x~kartID`), yeni talep için temiz kart açılır. NO daha sonra eski talebine dönerse (ör. yazım hatası düzeltildi) ayrılmış kart notları ve iş akışıyla geri bağlanır; birden fazla aday varsa tahmin yapılmaz (27.09.2026) |
 | talep_no, stok_no, sira, talep_sahibi | Aynı kaynak kimliğinde Excel'den güncellenir |
 | toplam_adet, adet_metin, plan_hafta, plan_baslama, plan_teslim | Excel authoritative; boş tarih eski tarihi temizler |
-| gerceklesen_teslim | Boşaltma dahil Excel authoritative; bugünün tarihi uydurulmaz |
+| gerceklesen_teslim | Boşaltma dahil Excel authoritative; bugünün tarihi uydurulmaz. İstisna (27.09.2026): kart uygulamada teslim edildiyse (teslim zamanı var), TESLİM EDİLDİ kalıyorsa ve Excel'in tarih hücresi boşsa uygulamadaki tarih korunur; boş hücre bilinen tarihi silmez. Excel bir tarih yazarsa o geçerlidir |
 | excel_durum, pcb, dizgi_tipi, dizgi_sorumlusu, malzeme_bekliyor | Kaynaktan güncellenir |
 | Geçerli DURUM | Excel authoritative; TESLİM EDİLDİ tarihi eksik olsa da kabul edilir, uyarı sayılır. İstisna (27.09.2026): önizlemeden onaylanan importta Excel'in durumu uygulamadakinin gerisindeyse (HAZIR < PLANA < DİZGİDE < TESLİM) kart "Karar gerekiyor" bölümüne düşer; admin Excel ile uygulama durumu arasından seçer. Öneri: kart uygulamada ilerletildiyse (başlama/teslim zamanı var) uygulamadaki durum, değilse Excel. Uygulamadaki TESLİM korunursa teslim tarihi de korunur. Önizlemesiz doğrudan import eskisi gibi Excel'i uygular |
 | Boş DURUM veya MALZEME TEDARİK / PDGM ÖNERİ | Yeni kartın durumu boş kalır. Uygulamada durumu olan kart (27.09.2026): önizlemeden onaylanan importta "Karar gerekiyor" bölümüne düşer; seçenekler "Durumsuz bırak" (durum boş, tamamlanan 0, başlama/bitiş/teslim zamanı silinir, kart Durumu Eksik listesine düşer) ve uygulamadaki durumu korumak. Öneri: durum uygulamada verildiyse (başlama/teslim zamanı var veya kartta saklı önceki Excel DURUM metni bu duruma karşılık gelmiyor, ör. admin Durum Ata) koru, Excel'den geldiyse durumsuz bırak. Karar "EXCEL DURUM BOŞ: DURUM KARARI" olarak loglanır; korunan kartın operatör alanına "Excel" yazılmaz. Önizlemesiz doğrudan import eskisi gibi workflow/adet korur |
@@ -56,7 +56,7 @@ metin biçiminde taşınır; metinsel `001` ve `1` ayrı kalır.
 | Çelişkili miktar | DİZGİDE veya workflow korunan kartta toplam, tamamlanandan küçükse tüm import iptal edilir |
 | operator, aciklama, admin_gizli | Korunur; boş operatör geçerli Excel durumunda Excel olabilir. Notlar (aciklama) yalnız admin önizlemede "Notları temizle" işaretlerse silinir (27.09.2026): seçenek, bu importta durumu değişen veya durum kararı istenen, notu olan kartlarda çıkar; silinen metin "EXCEL: NOTLAR TEMİZLENDİ" loguna yazılır; önizlemede sunulmayan kart seçimi importu iptal eder |
 | Workflow zaman damgaları | Gerçek mevcut kayıtlar korunur veya durum gerilemesinde temizlenir; import zamanı olay tarihi gibi yazılmaz |
-| Teslim zaman damgası | Kaynak teslim tarihi değişirse/boşalırsa temizlenir; eski tarih UI'a geri sızmaz |
+| Teslim zaman damgası | Kaynak teslim tarihi değişirse/boşalırsa temizlenir; eski tarih UI'a geri sızmaz (yukarıdaki uygulamada teslim istisnasında tarih ile birlikte korunur) |
 | Kaynakta olmayan Excel kartı | source_active=0; tarih/not/ID fiziksel olarak saklanır |
 | Manuel kartlar | Excel eşlemesine ve source pasifleştirmesine katılmaz |
 
@@ -263,3 +263,53 @@ operasyon ekranlarında 35 (9 kartın kaynak DURUM'u boş/eşlenmeyen). Testler:
 `PDGM_TEST_EXCEL_COM=1` ile). Önceki kod `.investigation/import-fix-20260926-before/`,
 birleşik diff `.investigation/import-fix-20260926.diff`. Rapor:
 `outputs/import-duzeltme-20260926/RAPOR.md`.
+
+
+## Yüksek öncelikli düzeltmeler — 27.09.2026
+
+- **Kayıt dosyası yazım hızı:** `kartlar.xlsx` ve `islem_logu.xlsx` her işlemde baştan
+  yazılır. Satır numarası artık sayaçla verilir (`ws.max_row` her satırda tüm hücreleri
+  tarıyordu, yazım karesel büyüyordu) ve gövde hücrelerine tek tek font atanmaz. Log sınırı
+  20.000'den 5.000'e indi; aşılınca en yeni 2.000 kayıt kalır, eskiler `yedekler/` altında
+  `…_islem_logu_arsiv.xlsx` dosyasına taşınır. Arşiv yalnız girişte değil, log ekleyen her
+  commit'ten sonra çalışır; hata verirse işlem bozulmaz, sonraki commit'te yeniden denenir.
+  "NOT EKLENDİ" logu tüm not geçmişi yerine yalnız eklenen satırı yazar. Ölçüm (1.000 kart):
+  2.000 logla not ekleme 2,55 → 1,03 sn, giriş 0,97 → 0,36 sn; 20.000 satırlık bir log ilk
+  işlemde bir kez arşivlenir, sonra işlemler bu düzeyde kalır. Rapor indirmede yalnız
+  sayaç düzeltmesi yapıldı, biçim aynı.
+- **Teslim tarihi:** yukarıdaki tablodaki gerceklesen_teslim istisnası. Excel TESLİM
+  EDİLDİ'ye yetişip tarih hücresini boş bıraktığında uygulamada kaydedilen teslim tarihi
+  ve zamanı silinmez (önceden geç teslimler sapma ve dönem sayılarından düşüyordu).
+- **Önizleme–onay bağlama:** her önizleme bir token üretir; onay formu bu token'ı gönderir.
+  Aynı oturumda başka bir sekmede başka dosya önizlendiyse eski sayfanın onayı 409 ile
+  reddedilir ve hiçbir kayıt değişmez; son önizleme tüketilmez, kendi sekmesinden
+  onaylanabilir. Yükleme ve onay formları `data-tek-gonderim` ile çift gönderime karşı
+  kilitlenir (ortak.js).
+
+Testler: `tests/test_yuksek_oncelik.py` (12 test; 6'sı değişiklik öncesi kodda başarısız).
+Python değişiklikleri çalışan sunucuya yeniden başlatmadan yansımaz.
+
+
+## Veri kaybı ve izlenebilirlik düzeltmeleri — 27.09.2026
+
+- **Karar önerisi:** Excel'den DİZGİDE gelmiş kartta operatörün uygulamada girdiği adet
+  (tamamlanan > 0 ve son işlemi yapan "Excel" değil) "uygulamada ilerletildi" sayılır;
+  önerilen seçim uygulamadaki durumu korur. Eski bir Excel TESLİM'inden kalan adet sayılmaz.
+- **Talep NO geri dönüşü:** yukarıdaki kaynak kimliği satırı. Önizlemede kart "Excel'e geri
+  eklendiği için yeniden aktifleşecek" grubunda "NO eski talebine döndü" etiketiyle çıkar;
+  "EXCEL NO ESKİ TALEBE DÖNDÜ" loglanır.
+- **İşlemi yapan:** operatör hesapları paylaşımlı olduğu için dizgiye alma, adet girişi,
+  teslim, not ve malzeme onayında girilen kişi adı kartın operatör alanına ve işlem
+  logunun yeni **İşlemi Yapan** sütununa yazılır (hesap Kullanıcı sütununda kalır). Eski log
+  dosyaları bu sütun olmadan okunur. Arayüz alanı hesabın adıyla doldurmaz ve hesap adıyla
+  gönderimi reddeder; ad gönderilmeyen API çağrılarında hesap adı kullanılır (en fazla 80
+  karakter). "Üretilen adet" alanı boş açılır.
+- **Admin denetim izi:** "ADMİN DÜZENLEDİ" logu değişen alanların eski/yeni değerini
+  yazar; not geçmişi değiştiyse silinen/eklenen satırlar ayrı "ADMİN NOT DÜZENLEDİ" kaydına
+  yazılır. Excel hücre sınırını aşan log detayı işlemi engellemez, işaretlenerek kısaltılır.
+- **Manuel kart:** aynı Talep NO + Kart Stok No ile listelerde görünen (Excel'den veya elle)
+  kart varsa yeni kart açık onayla eklenir; onay logda kalır. Aynı talep ve stok birden
+  fazla satırda meşru olabildiği için engellenmez. Yeni manuel kartların anahtarı
+  `MANUEL:<kart ID>`; eski manuel kartlar `Talep|Stok` anahtarını korur.
+
+Testler: `tests/test_orta_oncelik.py` (14 test; 12'si değişiklik öncesi kodda başarısız).

@@ -51,7 +51,7 @@
                 <p class="panel-aciklama">Bu satırları Excel'de düzeltip dosyayı kaydedin, ardından Yönetim ekranından yeniden yükleyin. Tek bir satır hatalıyken diğer satırlar da uygulanmaz; böylece yarım okunmuş bir dosya kartları ezemez.</p>
                 {% else %}
                 <h2>Neden uygulanmadı</h2>
-                <p class="panel-aciklama">Önizleme ile onay arasında dosya, Excel'in hesapladığı değerler veya sistemdeki kartlar değişti ya da bu önizleme zaten kullanıldı. Dosyayı yeniden seçip yeni bir önizleme oluşturun.</p>
+                <p class="panel-aciklama">Önizleme ile onay arasında dosya, Excel'in hesapladığı değerler veya sistemdeki kartlar değişti, bu önizleme zaten kullanıldı ya da bu oturumda daha sonra başka bir dosya önizlendi. Dosyayı yeniden seçip yeni bir önizleme oluşturun.</p>
                 {% endif %}
             </div>
         </div>
@@ -324,7 +324,7 @@
         {% if ayrilanlar %}
         <div class="etki-grup">
             <h3><span class="durum-rozet kotu">{{ ayrilanlar|length }}</span> NO'su başka talebe verilmiş kartlar ayrılacak</h3>
-            <p class="etki-aciklama">Excel'de bu NO artık farklı bir Talep NO taşıyor. Eski talebin kartı notları, operatörü ve durumuyla birlikte pasifleşir ve Yönetim ekranında kalır; yeni talep için Excel verisiyle temiz bir kart açılır (yeni kartlar listesinde). Böylece eski talebin durumu veya notu yeni talebe geçmez. NO'yu yanlışlıkla değiştirdiyseniz Excel'i düzeltip yeniden yükleyin.</p>
+            <p class="etki-aciklama">Excel'de bu NO artık farklı bir Talep NO taşıyor. Eski talebin kartı notları, operatörü ve durumuyla birlikte pasifleşir ve Yönetim ekranında kalır; yeni talep için Excel verisiyle temiz bir kart açılır (yeni kartlar listesinde). Böylece eski talebin durumu veya notu yeni talebe geçmez. Talep NO'yu yanlışlıkla değiştirdiyseniz sorun değil: Excel'i düzeltip yeniden yüklediğinizde eski kart notları ve iş akışıyla geri bağlanır.</p>
             <div class="tablo-kapsayici">
                 <table>
                     <thead><tr><th>Tür</th><th>NO</th><th>Eski talep</th><th>Eski durum</th><th>Excel'deki yeni talep</th></tr></thead>
@@ -366,7 +366,7 @@
 
         {% for baslik, aciklama, grup, rozet in [
             ("güncellenecek", "Yalnız değişen alanlar gösteriliyor. Sarı satırlar kartın iş durumunu veya tamamlanan adedini değiştirir.", guncellenecek, "uyari"),
-            ("Excel'e geri eklendiği için yeniden aktifleşecek", "Bu kartlar daha önce Excel'de yoktu; aynı kart notları ve geçmişiyle geri gelir.", geri_gelenler, "iyi")] if grup %}
+            ("Excel'e geri eklendiği için yeniden aktifleşecek", "Bu kartlar daha önce Excel'de yoktu ya da NO'ları başka talebe verilip eski talebine döndü; aynı kart notları ve geçmişiyle geri gelir.", geri_gelenler, "iyi")] if grup %}
         <div class="etki-grup">
             <h3><span class="durum-rozet {{ rozet }}">{{ grup|length }}</span> Kart {{ baslik }}</h3>
             <p class="etki-aciklama">{{ aciklama }}</p>
@@ -395,6 +395,7 @@
                         <strong>{{ k.talep_no }} · {{ k.stok_no }}</strong>
                         {{ tur_rozeti(k.sayfa) }}
                         <small>NO {{ k.sira or "—" }} · Kart #{{ k.id }}</small>
+                        {% if k.geri_baglandi %}<span class="durum-rozet iyi">NO eski talebine döndü · geçmişiyle geri bağlanır</span>{% endif %}
                     </header>
                     <table>
                         <thead><tr><th>Alan</th><th>Şu an</th><th>Onaydan sonra</th></tr></thead>
@@ -473,8 +474,10 @@
         </p>
         <div class="buton-grup">
             <a class="buton buton-hayalet" href="{{ url_for('yonetim') }}">Vazgeç</a>
-            <form id="onay-formu" action="{{ url_for('yukle_onay') }}" method="post" data-tek-gonderim>
+            <form id="onay-formu" action="{{ url_for('yukle_onay') }}" method="post"
+                  data-tek-gonderim data-gonderim-metni="Uygulanıyor…">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="onizleme_token" value="{{ onizleme_token or '' }}">
                 <button class="buton {{ 'buton-tehlike' if toplu_pasif else 'buton-basari' }}" type="submit">{{ "Yine de uygula" if toplu_pasif else "Değişiklikleri uygula" }}</button>
             </form>
         </div>

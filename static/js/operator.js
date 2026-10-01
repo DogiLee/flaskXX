@@ -84,10 +84,18 @@
 
     // ------------------------------------------------------------------
     // İşlemi yapan: operatör hesapları paylaşımlı olduğu için kişinin adı bu
-    // bilgisayarda (hesap başına) hatırlanır ve tüm işlemlerle gönderilir.
+    // bilgisayarda (hesap başına) hatırlanır ve tüm işlemlerle gönderilir; karta ve
+    // işlem loguna yazılır. Hesabın adı (ör. "Makine Operatörü") kişi adı sayılmaz:
+    // alan onunla doldurulmaz ve onunla gönderilemez.
     // ------------------------------------------------------------------
     const ISIM_KEY = `pdgm-islem-yapan:${document.body.dataset.kullanici || ""}`;
-    const kayitliIsim = () => kaliciDepo.al(ISIM_KEY, "") || document.body.dataset.ad || "";
+    const hesapAdlari = [document.body.dataset.ad, document.body.dataset.kullanici]
+        .filter(Boolean).map(aramaMetni);
+    const hesapAdiMi = (isim) => hesapAdlari.includes(aramaMetni(isim));
+    const kayitliIsim = () => {
+        const isim = kaliciDepo.al(ISIM_KEY, "");
+        return isim && !hesapAdiMi(isim) ? isim : "";
+    };
 
     function dialogAc(dialog) {
         const isim = dialog.querySelector("[data-islem-yapan]");
@@ -101,7 +109,7 @@
     function isimAl(form) {
         const alan = form.querySelector("[data-islem-yapan]");
         const isim = alan.value.trim();
-        if (isim) kaliciDepo.yaz(ISIM_KEY, isim);
+        if (isim && !hesapAdiMi(isim)) kaliciDepo.yaz(ISIM_KEY, isim);
         return isim;
     }
 
@@ -110,8 +118,9 @@
         const form = event.target;
         const submit = event.submitter || form.querySelector("[type=submit]");
         const isim = isimAl(form);
-        if (!isim) {
-            toast("İşlemi yapan kişinin adını yazın.", "uyari");
+        if (!isim || hesapAdiMi(isim)) {
+            toast(isim ? "Hesabın adı değil, işlemi yapan kişinin kendi adını yazın."
+                       : "İşlemi yapan kişinin adını yazın.", "uyari");
             form.querySelector("[data-islem-yapan]").focus();
             return;
         }
@@ -181,7 +190,9 @@
         buton.addEventListener("click", () => {
             const kalan = Number(buton.dataset.kalan || 1);
             el("bitir-id").value = buton.dataset.id;
-            el("bitir-adet").value = kalan;
+            // Bilerek boş: dolu gelirse hızlı bir Enter kalan adedin tamamını bitmiş kaydeder.
+            el("bitir-adet").value = "";
+            el("bitir-adet").placeholder = kalan > 1 ? `1–${kalan}` : "1";
             el("bitir-adet").max = kalan;
             el("bitir-not").value = "";
             el("bitir-kalan").textContent =

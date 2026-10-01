@@ -1,18 +1,10 @@
-/* Excel aktarım önizlemesi: çift gönderim koruması, "tamamlanan adedi sıfırla" seçimleri
-   ve Excel'in geride kaldığı kartlar için durum kararları.
+/* Excel aktarım önizlemesi: "tamamlanan adedi sıfırla" seçimleri ve Excel'in geride
+   kaldığı kartlar için durum kararları. Onay formunun çift gönderim koruması ortak.js'te
+   (form[data-tek-gonderim]).
    (import_onizleme.html içindeki satır içi betikten CSP için taşındı; davranış aynı.) */
 "use strict";
 
 (() => {
-    // Excel COM okuması birkaç saniye sürer; ikinci tıklama kullanılmış önizlemeye çarpmasın.
-    document.querySelectorAll("form[data-tek-gonderim]").forEach((form) => {
-        form.addEventListener("submit", () => {
-            const buton = form.querySelector("button[type=submit]");
-            buton.disabled = true;
-            buton.textContent = "Uygulanıyor…";
-        });
-    });
-
     // Tamamlanan adet sıfırlama ve not temizleme seçimleri: onay çubuğundaki sayaçlar
     // ve grup bazında toplu seçim.
     const sifirlaKutulari = [...document.querySelectorAll("input[data-sifirla]")];

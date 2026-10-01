@@ -29,7 +29,10 @@ async function pdgmFetch(url, options = {}) {
     const data = await response.json();
 
     if (!response.ok) {
-        throw new Error(data.hata || data.detail || "İşlem tamamlanamadı.");
+        // Yanıt gövdesi hataya eklenir: çağıran taraf "onay gerekli" gibi bayrakları okuyabilir.
+        const hata = new Error(data.hata || data.detail || "İşlem tamamlanamadı.");
+        hata.veri = data;
+        throw hata;
     }
     return data;
 }
@@ -191,6 +194,38 @@ document.addEventListener("submit", async (event) => {
     if (!tamam) return;
     form.dataset.onayVerildi = "1";
     form.requestSubmit(submitter && submitter.form === form ? submitter : undefined);
+});
+
+// <form data-tek-gonderim>: Excel okuması saniyeler sürer; form ikinci kez gönderilmesin
+// (ikinci önizleme ilkini geçersiz kılar, kullanılmış onay reddedilir).
+// data-gonderim-metni verilirse düğme beklerken o metni gösterir.
+document.addEventListener("submit", (event) => {
+    const form = event.target;
+    if (!(form instanceof HTMLFormElement) || !form.hasAttribute("data-tek-gonderim")) return;
+    if (form.dataset.gonderildi === "1") {
+        event.preventDefault();
+        return;
+    }
+    if (event.defaultPrevented) return;
+    form.dataset.gonderildi = "1";
+    const buton = event.submitter || form.querySelector("button[type=submit]");
+    if (buton) {
+        buton.dataset.ilkMetin = buton.textContent;
+        buton.disabled = true;
+        if (form.dataset.gonderimMetni) buton.textContent = form.dataset.gonderimMetni;
+    }
+});
+
+// Geri tuşuyla önbellekten dönülen sayfada düğme kilitli kalmasın.
+window.addEventListener("pageshow", (event) => {
+    if (!event.persisted) return;
+    document.querySelectorAll("form[data-tek-gonderim]").forEach((form) => {
+        delete form.dataset.gonderildi;
+        form.querySelectorAll("button[type=submit]").forEach((buton) => {
+            buton.disabled = false;
+            if (buton.dataset.ilkMetin) buton.textContent = buton.dataset.ilkMetin;
+        });
+    });
 });
 
 // ---------------------------------------------------------------------------

@@ -109,17 +109,20 @@ class AuditFixTests(unittest.TestCase):
             self.assertEqual(depo._kartlar,before)
             self.assertEqual(Path(depo.KARTLAR_DOSYA).read_bytes(),disk)
             self.post('/api/not',{'kart_id':k['id'],'not':'Önizlemeden sonraki not'})
-            r=self.client.post('/yonetim/yukle-onay',data={'_csrf_token':'test-token'})
+            r=self.client.post('/yonetim/yukle-onay',data={'_csrf_token':'test-token',
+                'onizleme_token':ui.onizleme_token(self.client)})
             self.assertEqual(r.status_code,409)
             self.assertEqual(depo.kart_getir(k['id'])['tamamlanan_adet'],3)
             with path.open('rb') as f:
                 r=self.client.post('/yonetim/yukle',data={'_csrf_token':'test-token','onizleme':'1','dosya':(f,'plan.xlsx')})
             self.assertEqual(r.status_code,200)
             # Seçim gönderilmezse aktarım uygulanmaz; admin Excel'e göre geri almayı seçerse adet 0 olur.
-            self.assertEqual(self.client.post('/yonetim/yukle-onay',data={'_csrf_token':'test-token'}).status_code,409)
+            self.assertEqual(self.client.post('/yonetim/yukle-onay',data={'_csrf_token':'test-token',
+                'onizleme_token':ui.onizleme_token(self.client)}).status_code,409)
             with path.open('rb') as f:
                 self.client.post('/yonetim/yukle',data={'_csrf_token':'test-token','onizleme':'1','dosya':(f,'plan.xlsx')})
             self.assertEqual(self.client.post('/yonetim/yukle-onay',data={'_csrf_token':'test-token',
+                'onizleme_token':ui.onizleme_token(self.client),
                 f'gerileme_{k["id"]}':'PLANA ALINDI'}).status_code,302)
             self.assertEqual(depo.kart_getir(k['id'])['tamamlanan_adet'],0)
             self.assertIn('Önizlemeden sonraki not',depo.kart_getir(k['id'])['aciklama'])
@@ -142,8 +145,10 @@ class AuditFixTests(unittest.TestCase):
         with patch.object(ex,'excel_deger_snapshot_olustur',snapshot):
             with path.open('rb') as f:
                 self.client.post('/yonetim/yukle',data={'_csrf_token':'test-token','onizleme':'1','dosya':(f,'plan.xlsx')})
-            r=self.client.post('/yonetim/yukle-onay',data={'_csrf_token':'test-token'})
+            r=self.client.post('/yonetim/yukle-onay',data={'_csrf_token':'test-token',
+                'onizleme_token':ui.onizleme_token(self.client)})
         self.assertEqual(r.status_code,409)
+        self.assertIn('hesaplanan değerleri önizlemeden sonra değişti',r.get_data(as_text=True))
         self.assertEqual(depo._kartlar,before)
 
 

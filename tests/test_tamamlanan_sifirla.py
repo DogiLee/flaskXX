@@ -108,7 +108,8 @@ class TamamlananSifirlaTests(unittest.TestCase):
         def onayla(secim):
             # Kart 2 (Excel'den TESLİM gelmişti, Excel artık DİZGİDE) "Karar gerekiyor" bölümünde;
             # önerilen seçim Excel'in durumu.
-            veri = {'_csrf_token': 'test-token', 'sifirla': secim, f'gerileme_{idler[2]}': 'DİZGİDE'}
+            veri = {'_csrf_token': 'test-token', 'onizleme_token': ui.onizleme_token(client),
+                    'sifirla': secim, f'gerileme_{idler[2]}': 'DİZGİDE'}
             with patch.object(ex, 'excel_deger_snapshot_olustur', snapshot):
                 return client.post('/yonetim/yukle-onay', data=veri)
 

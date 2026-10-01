@@ -155,7 +155,7 @@ class ExcelGerideTests(unittest.TestCase):
         self.assertEqual(secimler, {str(k[1]): 'DİZGİDE', str(k[2]): 'TESLİM EDİLDİ', str(k[3]): 'DİZGİDE'})
         self.assertIn('Hepsinde uygulamadakini koru', html)
         # Admin önerileri kabul eder, yalnız 1. kartta adedi sıfırlar.
-        veri = {'_csrf_token': 'test-token', 'sifirla': [str(k[1])],
+        veri = {'_csrf_token': 'test-token', 'onizleme_token': ui.onizleme_token(client), 'sifirla': [str(k[1])],
                 **{f'gerileme_{i}': d for i, d in secimler.items()}}
         with patch.object(ex, 'excel_deger_snapshot_olustur', snapshot):
             yanit = client.post('/yonetim/yukle-onay', data=veri)

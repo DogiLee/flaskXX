@@ -32,7 +32,8 @@
                     <p class="panel-aciklama">MAKİNE (zorunlu), ELDE DİZGİ ve EÜM sayfaları okunur; ELDE DİZGİ ve EÜM isteğe bağlıdır. Gizli satır ve sütunlar da okunur, sütunlar başlık adıyla eşlenir. Talep NO ve Kart Stok No olmayan satırlar kart sayılmaz ve önizlemede listelenir.</p>
                 </div>
             </div>
-            <form method="post" action="{{ url_for('yukle') }}" enctype="multipart/form-data" class="yukleme-form">
+            <form method="post" action="{{ url_for('yukle') }}" enctype="multipart/form-data" class="yukleme-form"
+                  data-tek-gonderim data-gonderim-metni="Excel okunuyor…">
                 <input type="hidden" name="onizleme" value="1">
                 <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
                 <label class="dosya-sec">
@@ -343,7 +344,7 @@
             <div class="log-liste">
                 {% for l in loglar %}
                 <div class="log-satir">
-                    <div><strong>{{ l.islem or "İşlem" }}</strong><span>{{ l.kullanici or "—" }} · {{ l.zaman or "—" }}</span></div>
+                    <div><strong>{{ l.islem or "İşlem" }}</strong><span>{% if l.islem_yapan and l.islem_yapan != l.kullanici %}{{ l.islem_yapan }} ({{ l.kullanici or "—" }}){% else %}{{ l.kullanici or "—" }}{% endif %} · {{ l.zaman or "—" }}</span></div>
                     <small>{% if l.talep_no %}{{ l.talep_no }}{% endif %}{% if l.stok_no %} · {{ l.stok_no }}{% endif %}{% if l.detay %} · {{ l.detay }}{% endif %}</small>
                 </div>
                 {% endfor %}
@@ -400,7 +401,7 @@
             <small>Yeni bir TESLİM EDİLDİ geçişinde boş tarih bugün olur. Zaten teslim edilmiş kartta tarih uydurulmaz.</small>
         </div>
 
-        <div class="alan"><label for="admin-not">Not</label><textarea id="admin-not" rows="4"></textarea><small>Burada mevcut not geçmişini düzenlersiniz. Toplam sınır 32.767 karakterdir; sınırı aşan işlem kaydedilmez.</small></div>
+        <div class="alan"><label for="admin-not">Not</label><textarea id="admin-not" rows="4"></textarea><small>Burada mevcut not geçmişini düzenlersiniz; silinen ve eklenen satırlar işlem loguna yazılır. Toplam sınır 32.767 karakterdir; sınırı aşan işlem kaydedilmez.</small></div>
 
         <div class="alan">
             <label for="admin-dizgi-tipi">Dizgi Tipi</label>

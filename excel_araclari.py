@@ -810,8 +810,9 @@ UYARI_TURLERI = {
     ),
     "teslim_tarihsiz": (
         "TESLİM EDİLDİ ama Gerçekleşen Teslim T. boş",
-        "Kart teslim edilmiş sayılır. Teslim tarihi bilinmediği için zamanında/geç teslim "
-        "hesabına girmez; sistem tarih uydurmaz.",
+        "Kart teslim edilmiş sayılır. Kart uygulamada teslim edildiyse uygulamadaki teslim "
+        "tarihi korunur. Değilse tarih bilinmiyor olarak kalır, zamanında/geç teslim hesabına "
+        "girmez; sistem tarih uydurmaz.",
     ),
     "teslim_tarihi_durum_disi": (
         "Gerçekleşen Teslim T. dolu ama DURUM teslim değil",
@@ -1088,7 +1089,8 @@ def _sayfa_satirlarini_coz(ws, sayfa_adi, dizgi_tipi, anahtar_gruplari, parsed_l
                      ek=str(excel_durum_raw).strip())
 
         if ilk_durum == depo.TESLIM_EDILDI and not gerceklesen:
-            uyar("teslim_tarihsiz", "TESLİM EDİLDİ ama Gerçekleşen Teslim T. boş; teslim tarihi bilinmiyor olarak kalır.")
+            uyar("teslim_tarihsiz", "TESLİM EDİLDİ ama Gerçekleşen Teslim T. boş; uygulamada teslim edilen kartın "
+                                    "tarihi korunur, diğerlerinde tarih bilinmiyor olarak kalır.")
         elif ilk_durum != depo.TESLIM_EDILDI and gerceklesen:
             uyar("teslim_tarihi_durum_disi", f"DURUM {ilk_durum or 'boş'} iken Gerçekleşen Teslim T. dolu; kart teslim edilmiş sayılmaz.")
 
@@ -1267,9 +1269,8 @@ def _sayfa_yaz(ws, basliklar, satirlar):
         hucre.font = BASLIK_YAZI
         hucre.alignment = Alignment(horizontal="center", vertical="center")
 
-    for satir in satirlar:
-        satir_no = ws.max_row + 1
-
+    # ws.max_row her çağrıda tüm hücreleri tarar; satır numarası sayaçla verilir.
+    for satir_no, satir in enumerate(satirlar, start=2):
         for sutun_no, deger in enumerate(satir,start=1):
             _excel_hucre_yaz(
                 ws.cell(row=satir_no,column=sutun_no,),deger)
@@ -1360,7 +1361,7 @@ def calisma_kitabi_uret(kartlar, loglar, ozet):
     ws2 = wb.create_sheet("İşlem Logu")
     _sayfa_yaz(
         ws2,
-        ["Zaman", "Kullanıcı", "Rol", "İşlem", "Talep NO", "Kart Stok No", "Adet", "Detay"],
+        ["Zaman", "Kullanıcı", "Rol", "İşlem", "Talep NO", "Kart Stok No", "Adet", "Detay", "İşlemi Yapan"],
         [
             [
                 l.get("zaman"),
@@ -1371,6 +1372,7 @@ def calisma_kitabi_uret(kartlar, loglar, ozet):
                 l.get("stok_no") or "",
                 l.get("adet") if l.get("adet") is not None else "",
                 l.get("detay") or "",
+                l.get("islem_yapan") or "",
             ]
             for l in loglar
         ],

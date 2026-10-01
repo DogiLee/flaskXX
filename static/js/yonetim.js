@@ -205,7 +205,7 @@
         el("yeni-talep-no").focus();
     });
 
-    yeniForm.addEventListener("submit", (event) => gonder(event, "/api/admin/kart-ekle", () => {
+    function yeniKartGovdesi() {
         const sira = el("yeni-sira").value;
         return {
             sira: sira ? Number(sira) : null,
@@ -221,7 +221,45 @@
             dizgi_sorumlusu: el("yeni-dizgi-sorumlusu").value,
             not: el("yeni-not").value,
         };
-    }, "Yeni kart PLANA ALINDI durumunda oluşturuldu."));
+    }
+
+    // Aynı Talep NO + Kart Stok No ile kart varsa sunucu onay ister (çift sayımı önlemek için);
+    // admin ayrı bir iş olduğunu onaylarsa istek tekrar_onayi ile yeniden gönderilir.
+    yeniForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const submit = event.submitter || yeniForm.querySelector("[type=submit]");
+        const govde = yeniKartGovdesi();
+        const gonderKart = (ek = {}) => pdgmFetch("/api/admin/kart-ekle", {
+            method: "POST", body: JSON.stringify({...govde, ...ek}),
+        });
+        submit.disabled = true;
+        try {
+            try {
+                await gonderKart();
+            } catch (hata) {
+                if (!hata.veri?.tekrar_onayi_gerekli) throw hata;
+                const mevcut = (hata.veri.mevcut || []).map((k) =>
+                    `#${k.id} ${k.dizgi_etiket} · ${k.durum} · ${k.toplam_adet} adet (${k.kaynak === "EXCEL" ? "Excel" : "manuel"})`);
+                const tamam = await onayIste({
+                    etiket: "AYNI TALEP + STOK",
+                    baslik: "Bu iş için zaten kart var",
+                    mesaj: `${hata.message} Mevcut: ${mevcut.join("; ")}. Ayrı bir iş olduğundan eminseniz devam edin.`,
+                    evet: "Yine de oluştur",
+                    tehlike: true,
+                });
+                if (!tamam) {
+                    submit.disabled = false;
+                    return;
+                }
+                await gonderKart({tekrar_onayi: true});
+            }
+            dialogKapat(yeniForm.closest("dialog"));
+            yenileVeBildir("Yeni kart PLANA ALINDI durumunda oluşturuldu.");
+        } catch (hata) {
+            hataMesaji(hata);
+            submit.disabled = false;
+        }
+    });
 
     // ------------------------------------------------------------------
     // Gizle

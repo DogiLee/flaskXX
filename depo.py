@@ -122,6 +122,18 @@ class MalzemeBekliyorHatasi(IsKuralHatasi):
     """
 
 
+class TekrarKartOnayiGerekli(IsKuralHatasi):
+    """Aynı Talep NO + Kart Stok No ile görünür kart varken yeni manuel kart için onay gerekir.
+
+    MalzemeBekliyorHatasi gibi ayrı tutulur: app.py bunu "onayla ve tekrar gönder"
+    yanıtına çevirir; kartlar, mevcut eşleşmelerin kısa özetidir.
+    """
+
+    def __init__(self, mesaj, kartlar):
+        super().__init__(mesaj)
+        self.kartlar = kartlar
+
+
 class VeriDogrulamaHatasi(DepoHatasi):
     pass
 
@@ -176,6 +188,9 @@ LOG_ALANLARI = [
     ("Kart Stok No", "stok_no"),
     ("Adet", "adet"),
     ("Detay", "detay"),
+    # Operatör hesapları paylaşımlı: hesabın yanında işlemi yapan kişinin adı.
+    # Eski log dosyalarında sütun yoktur; _oku başlık adıyla eşlediği için boş okunur.
+    ("İşlemi Yapan", "islem_yapan"),
 ]
 
 YUKLEME_ALANLARI = [
@@ -226,12 +241,13 @@ _kartlar: list[dict] = []
 _loglar: list[dict] = []
 _yuklemeler: list[dict] = []
 
-LOG_SINIRI = 20_000
-LOG_SAKLA = 5_000
+# islem_logu.xlsx her işlemde baştan yazılır; boyutu her tıklamanın süresini belirler.
+# Sınır aşılınca eski kayıtlar yedekler/ altındaki arşiv dosyasına taşınır.
+LOG_SINIRI = 5_000
+LOG_SAKLA = 2_000
 
 BASLIK_DOLGU = PatternFill("solid", fgColor="0F2027")
 BASLIK_YAZI = Font(name="Arial", bold=True, color="FFFFFF", size=11)
-GOVDE_YAZI = Font(name="Arial", size=10)
 
 
 # ---------------------------------------------------------------------------
@@ -270,6 +286,11 @@ def kart_surumu(kart):
             for _, alan in KART_ALANLARI}
     return hashlib.sha256(json.dumps(veri, sort_keys=True, ensure_ascii=False,
                                      default=str).encode("utf-8")).hexdigest()
+
+
+def _islem_yapan(isim, kullanici):
+    """Paylaşımlı operatör hesabında işlemi yapan kişi; ad verilmezse hesap adı."""
+    return _temiz_metin(isim) or _temiz_metin(kullanici)
 
 
 def _kart_notu_ekle(mevcut, metin, isim):
@@ -529,18 +550,15 @@ def _workbook_uret(alanlar, kayitlar, sayfa_adi):
         hucre.font = BASLIK_YAZI
         hucre.alignment = Alignment(horizontal="center", vertical="center")
 
-    for kayit in kayitlar:
-        satir_no = ws.max_row + 1
-
+    # Bu dosyalar her işlemde baştan yazılır; hız için satır numarası sayaçla verilir
+    # (ws.max_row her çağrıda tüm hücreleri tarar, yazım karesel yavaşlardı) ve gövde
+    # hücrelerine tek tek font atanmaz. Biçimli çıktı gereken rapor excel_araclari'dadır.
+    for satir_no, kayit in enumerate(kayitlar, start=2):
         for sutun_no, (_, alan) in enumerate(alanlar, start=1):
             _excel_hucre_yaz(
                 ws.cell(row=satir_no, column=sutun_no),
                 kayit.get(alan),
             )
-
-    for satir in ws.iter_rows(min_row=2):
-        for hucre in satir:
-            hucre.font = GOVDE_YAZI
 
     for sutun, (baslik, alan) in enumerate(alanlar, start=1):
         en = max(
@@ -1192,7 +1210,13 @@ def _kartlari_kaydet():
 # Log ve yükleme geçmişi
 # ---------------------------------------------------------------------------
 
-def _log_kaydi(kullanici, rol, islem, talep_no="", stok_no="", adet=None, detay=""):
+LOG_DETAY_SINIRI = 32_000
+
+
+def _log_kaydi(kullanici, rol, islem, talep_no="", stok_no="", adet=None, detay="", islem_yapan=None):
+    # Kart metni kırpılmaz; log satırı ise Excel hücre sınırını aşıp işlemi engellememeli.
+    if isinstance(detay, str) and len(detay) > LOG_DETAY_SINIRI:
+        detay = detay[:LOG_DETAY_SINIRI] + " … [log için kısaltıldı; tam metin kart yedeklerinde]"
     return {
         "zaman": simdi(),
         "kullanici": kullanici,
@@ -1202,39 +1226,55 @@ def _log_kaydi(kullanici, rol, islem, talep_no="", stok_no="", adet=None, detay=
         "stok_no": stok_no,
         "adet": adet,
         "detay": detay,
+        "islem_yapan": _temiz_metin(islem_yapan) or None,
     }
 
 
 def _log_arsivle_gerekirse():
+    """Commit sonrası bakım: log LOG_SINIRI'nı aştıysa eski kayıtları arşive taşır.
+
+    Log ekleyen her commit yolu (log_ekle, kart işlemleri, import, yedekten geri
+    yükleme) yazım başarılı olduktan sonra çağırır. İşlem zaten diske yazıldığı için
+    arşivleme hata verirse işlem bozulmaz; log olduğu gibi kalır ve bir sonraki
+    commit'te yeniden denenir.
+    """
     global _loglar
 
     if len(_loglar) <= LOG_SINIRI:
         return
 
-    os.makedirs(YEDEK_KLASORU, exist_ok=True)
-    arsivlenecek = _loglar[:-LOG_SAKLA]
+    arsivlenecek, kalan = _loglar[:-LOG_SAKLA], _loglar[-LOG_SAKLA:]
     arsiv = os.path.join(
         YEDEK_KLASORU,
-        f"{datetime.now():%Y%m%d_%H%M%S}_islem_logu_arsiv.xlsx",
+        f"{datetime.now():%Y%m%d_%H%M%S}_{uuid4().hex[:8]}_islem_logu_arsiv.xlsx",
     )
-    _yaz(arsiv, LOG_ALANLARI, arsivlenecek, "İşlem Logu")
-    _loglar = _loglar[-LOG_SAKLA:]
+    try:
+        os.makedirs(YEDEK_KLASORU, exist_ok=True)
+        _yaz(arsiv, LOG_ALANLARI, arsivlenecek, "İşlem Logu")
+        _yaz(LOG_DOSYA, LOG_ALANLARI, kalan, "İşlem Logu")
+    except Exception:  # noqa: BLE001
+        # Log dosyası kısaltılamadıysa kayıtlar hâlâ onda; arşiv kopyası çift olmasın.
+        try:
+            os.remove(arsiv)
+        except OSError:
+            pass
+        return
+    _loglar = kalan
 
 
 def log_ekle(kullanici, rol, islem, talep_no="", stok_no="", adet=None, detay=""):
-    global _loglar
-
     with _kilit:
-        eski = copy.deepcopy(_loglar)
+        # Log kayıtları değiştirilmez, yalnız eklenir: geri almak için uzunluk yeter.
+        log_sayisi = len(_loglar)
         try:
             _loglar.append(
                 _log_kaydi(kullanici, rol, islem, talep_no, stok_no, adet, detay)
             )
-            _log_arsivle_gerekirse()
             _yaz(LOG_DOSYA, LOG_ALANLARI, _loglar, "İşlem Logu")
         except Exception:
-            _loglar = eski
+            del _loglar[log_sayisi:]
             raise
+        _log_arsivle_gerekirse()
 
 
 def loglari_getir(adet=None):
@@ -1462,11 +1502,12 @@ def _atomik_kart_islemi(islem):
         sonuc = islem()
         _kart_listesi_dogrula(_kartlar)
         _kart_log_commit()
-        return sonuc
     except Exception:
         _kartlar = eski_kartlar
         del _loglar[log_sayisi:]
         raise
+    _log_arsivle_gerekirse()
+    return sonuc
 
 
 # ---------------------------------------------------------------------------
@@ -1507,12 +1548,13 @@ def kart_baslat(kart_id, adet, kullanici, rol, operator_tipi, aciklama="", malze
             raise IsKuralHatasi(f"Başlatılacak adet 1 ile {kart['toplam_adet']} arasında olmalı.")
 
         def islem():
+            yapan = _islem_yapan(isim, kullanici)
             yeni_aciklama = kart.get("aciklama")
             if _temiz_metin(aciklama):
                 yeni_aciklama = _kart_notu_ekle(
                     kart.get("aciklama"),
                     aciklama,
-                    isim or kullanici,
+                    yapan,
                 )
 
             kart.update(
@@ -1523,7 +1565,7 @@ def kart_baslat(kart_id, adet, kullanici, rol, operator_tipi, aciklama="", malze
                 teslim_zamani=None,
                 gerceklesen_teslim=None,
                 malzeme_bekliyor=0,
-                operator=kullanici,
+                operator=yapan,
                 aciklama=yeni_aciklama,
                 guncelleme=simdi(),
             )
@@ -1537,6 +1579,7 @@ def kart_baslat(kart_id, adet, kullanici, rol, operator_tipi, aciklama="", malze
                             kart.get("talep_no") or "",
                             kart.get("stok_no") or "",
                             detay="Operatör malzemenin tedarik edildiğini onayladı; kart dizgiye alındı.",
+                            islem_yapan=yapan,
                         )
                     )
                 elif rol == "admin":
@@ -1548,6 +1591,7 @@ def kart_baslat(kart_id, adet, kullanici, rol, operator_tipi, aciklama="", malze
                             kart.get("talep_no") or "",
                             kart.get("stok_no") or "",
                             detay="Admin, malzeme bekleyen kartı onay istemeden doğrudan dizgiye aldı.",
+                            islem_yapan=yapan,
                         )
                     )
             _loglar.append(
@@ -1559,6 +1603,7 @@ def kart_baslat(kart_id, adet, kullanici, rol, operator_tipi, aciklama="", malze
                     kart.get("stok_no") or "",
                     adet,
                     aciklama or f"{adet} adet dizgiye alındı",
+                    islem_yapan=yapan,
                 )
             )
             return kart_gorunumu(kart)
@@ -1594,6 +1639,7 @@ def kart_bitir(kart_id, adet, kullanici, rol, operator_tipi, aciklama="", isim="
             raise IsKuralHatasi(f"Adet 1 ile {kalan} arasında olmalı.")
 
         def islem():
+            yapan = _islem_yapan(isim, kullanici)
             yeni_toplam = kart["tamamlanan_adet"] + adet
             uretim_bitti = yeni_toplam == kart["toplam_adet"]
 
@@ -1602,13 +1648,13 @@ def kart_bitir(kart_id, adet, kullanici, rol, operator_tipi, aciklama="", isim="
                 yeni_aciklama = _kart_notu_ekle(
                     kart.get("aciklama"),
                     aciklama,
-                    isim or kullanici,
+                    yapan,
                 )
 
             kart.update(
                 tamamlanan_adet=yeni_toplam,
                 bitis_zamani=simdi() if uretim_bitti else kart.get("bitis_zamani"),
-                operator=kullanici,
+                operator=yapan,
                 aciklama=yeni_aciklama,
                 guncelleme=simdi(),
             )
@@ -1621,6 +1667,7 @@ def kart_bitir(kart_id, adet, kullanici, rol, operator_tipi, aciklama="", isim="
                     kart.get("stok_no") or "",
                     adet,
                     aciklama or f"{yeni_toplam}/{kart['toplam_adet']} adet tamamlandı",
+                    islem_yapan=yapan,
                 )
             )
 
@@ -1657,13 +1704,14 @@ def kart_teslim_et(kart_id, kullanici, rol, operator_tipi, aciklama="", isim="")
             )
 
         def islem():
+            yapan = _islem_yapan(isim, kullanici)
             teslim_ani = simdi()
             yeni_aciklama = kart.get("aciklama")
             if _temiz_metin(aciklama):
                 yeni_aciklama = _kart_notu_ekle(
                     kart.get("aciklama"),
                     aciklama,
-                    isim or kullanici,
+                    yapan,
                 )
 
             kart.update(
@@ -1671,7 +1719,7 @@ def kart_teslim_et(kart_id, kullanici, rol, operator_tipi, aciklama="", isim="")
                 gerceklesen_teslim=bugun(),
                 teslim_zamani=teslim_ani,
                 bitis_zamani=kart.get("bitis_zamani") or teslim_ani,
-                operator=kullanici,
+                operator=yapan,
                 aciklama=yeni_aciklama,
                 guncelleme=teslim_ani,
             )
@@ -1684,6 +1732,7 @@ def kart_teslim_et(kart_id, kullanici, rol, operator_tipi, aciklama="", isim="")
                     kart.get("stok_no") or "",
                     kart.get("toplam_adet"),
                     aciklama or f"Teslim tarihi: {bugun()}",
+                    islem_yapan=yapan,
                 )
             )
             return kart_gorunumu(kart)
@@ -1698,7 +1747,7 @@ def kart_not_guncelle(kart_id, aciklama, kullanici, rol, isim=""):
     kart_id = _sayi(kart_id, -1)
     if not _temiz_metin(aciklama):
         raise IsKuralHatasi("Not boş olamaz.")
-    gosterim_adi = _temiz_metin(isim) or _temiz_metin(kullanici)
+    gosterim_adi = _islem_yapan(isim, kullanici)
     if not gosterim_adi:
         raise IsKuralHatasi("Operatör ismi boş olamaz.")
 
@@ -1716,6 +1765,8 @@ def kart_not_guncelle(kart_id, aciklama, kullanici, rol, isim=""):
                 gosterim_adi,
             )
             kart["guncelleme"] = simdi()
+            # Logda yalnız eklenen satır: tüm geçmişi her notta tekrar yazmak logu
+            # karesel büyütüyordu. Geçmişin tamamı kartta duruyor.
             _loglar.append(
                 _log_kaydi(
                     kullanici,
@@ -1723,7 +1774,8 @@ def kart_not_guncelle(kart_id, aciklama, kullanici, rol, isim=""):
                     "NOT EKLENDİ",
                     kart.get("talep_no") or "",
                     kart.get("stok_no") or "",
-                    detay=kart.get("aciklama") or "",
+                    detay=(kart.get("aciklama") or "").rsplit("\n", 1)[-1],
+                    islem_yapan=gosterim_adi,
                 )
             )
             return kart_gorunumu(kart)
@@ -1760,8 +1812,13 @@ def admin_kart_ekle(
     elle_dizgi=False,
     dizgi_tipi=None,
     dizgi_sorumlusu="",
+    tekrar_onayi=False,
 ):
-    """Admin panelinden PLANA ALINDI durumunda manuel kart oluşturur."""
+    """Admin panelinden PLANA ALINDI durumunda manuel kart oluşturur.
+
+    Aynı Talep NO + Kart Stok No ile görünür bir kart varsa tekrar_onayi=True
+    verilmedikçe TekrarKartOnayiGerekli fırlatılır.
+    """
     global _kartlar, _loglar
 
     talep_no = _temiz_metin(talep_no)
@@ -1798,14 +1855,31 @@ def admin_kart_ekle(
         )
 
     secilen_dizgi = _dizgi_tipi_coz(dizgi_tipi=dizgi_tipi, elle_dizgi=elle_dizgi)
-    anahtar = f"{talep_no}|{stok_no}"
 
     with _kilit:
-        if any(kart.get("anahtar") == anahtar for kart in _kartlar):
-            raise IsKuralHatasi(f"Bu Talep NO + Kart Stok No zaten mevcut: {anahtar}")
+        # Excel'den gelmiş ya da elle eklenmiş, listelerde görünen aynı Talep+Stok kartları.
+        # Aynı talep ve stok birden fazla sipariş satırında meşru olabildiği için engellenmez;
+        # yanlışlıkla çift kart açılıp sayaçlarda iki kez sayılmasın diye açık onay istenir.
+        ayni = [
+            kart for kart in _kartlar
+            if _yonetimde_gorunur_mu(kart)
+            and (kart.get("kaynak") != "EXCEL" or kart.get("source_active", 1) == 1)
+            and _temiz_metin(kart.get("talep_no")).casefold() == talep_no.casefold()
+            and _temiz_metin(kart.get("stok_no")).casefold() == stok_no.casefold()
+        ]
+        if ayni and not tekrar_onayi:
+            raise TekrarKartOnayiGerekli(
+                f"{talep_no} · {stok_no} için listelerde {len(ayni)} kart zaten var. Aynı iş için ikinci "
+                "kart açılırsa Pano ve raporlarda iki kez sayılır.",
+                [{"id": kart["id"], "kaynak": kart.get("kaynak"), "durum": kart.get("durum") or "DURUMU EKSİK",
+                  "dizgi_etiket": dizgi_etiketi(kart.get("dizgi_tipi")), "toplam_adet": kart.get("toplam_adet")}
+                 for kart in ayni],
+            )
 
         def islem():
             kart_id = max([_sayi(kart.get("id"), 0) for kart in _kartlar] or [0]) + 1
+            # Aynı Talep+Stok'lu birden çok kart olabildiği için anahtar kart kimliğinden üretilir.
+            anahtar = f"MANUEL:{kart_id}"
             kayit = {
                 "id": kart_id,
                 "sira": sira_degeri,
@@ -1848,12 +1922,22 @@ def admin_kart_ekle(
                     stok_no,
                     toplam,
                     f"{toplam} adet · Durum: {PLANA_ALINDI}"
-                    + f" · {dizgi_etiketi(secilen_dizgi)}",
+                    + f" · {dizgi_etiketi(secilen_dizgi)}"
+                    + (f" · aynı Talep+Stok ile {len(ayni)} kart vardı (ID: "
+                       f"{', '.join(str(kart['id']) for kart in ayni)}); admin onayıyla eklendi" if ayni else ""),
                 )
             )
             return kart_gorunumu(kayit)
 
         return _atomik_kart_islemi(islem)
+
+
+# Admin düzenlemesinde denetim loguna eski/yeni değeri yazılan alanlar (not ayrı loglanır).
+ADMIN_IZLENEN_ALANLAR = (
+    "durum", "toplam_adet", "tamamlanan_adet", "baslangic_adet", "plan_hafta", "plan_baslama",
+    "plan_teslim", "gerceklesen_teslim", "baslama_zamani", "bitis_zamani", "teslim_zamani",
+    "dizgi_tipi", "dizgi_sorumlusu", "malzeme_bekliyor",
+)
 
 
 def admin_kart_duzenle(
@@ -1958,6 +2042,7 @@ def admin_kart_duzenle(
         def islem():
             nonlocal tamamlanan, yeni_gerceklesen
 
+            onceki = copy.deepcopy(kart)
             baslama = kart.get("baslama_zamani")
             bitis = kart.get("bitis_zamani")
             teslim_zamani = kart.get("teslim_zamani")
@@ -2008,6 +2093,13 @@ def admin_kart_duzenle(
                 guncelleme=simdi(),
             )
 
+            # Denetim izi: değişen her alanın eski/yeni değeri (import'taki "EXCEL KART
+            # GÜNCELLENDİ" gibi). Boş metin ile None aynı sayılır.
+            def deger(k, alan):
+                return None if k.get(alan) in (None, "") else k.get(alan)
+
+            degisen = {alan: [deger(onceki, alan), deger(kart, alan)] for alan in ADMIN_IZLENEN_ALANLAR
+                       if deger(onceki, alan) != deger(kart, alan)}
             _loglar.append(
                 _log_kaydi(
                     kullanici,
@@ -2016,9 +2108,30 @@ def admin_kart_duzenle(
                     kart.get("talep_no") or "",
                     kart.get("stok_no") or "",
                     tamamlanan,
-                    f"{onceki_durum} → {yeni_durum} · {tamamlanan}/{toplam} adet",
+                    f"{onceki_durum} → {yeni_durum} · {tamamlanan}/{toplam} adet · ID={kart['id']} · "
+                    + (f"değişenler: {json.dumps(degisen, ensure_ascii=False)}" if degisen
+                       else "alan değişikliği yok"),
                 )
             )
+            # Not geçmişi düzenlenebildiği için silinen satırlar ayrı kayıtta saklanır.
+            eski_not, yeni_not = _temiz_metin(onceki.get("aciklama")), _temiz_metin(kart.get("aciklama"))
+            if eski_not != yeni_not:
+                eski_satirlar, yeni_satirlar = eski_not.splitlines(), yeni_not.splitlines()
+                eski_kume, yeni_kume = set(eski_satirlar), set(yeni_satirlar)
+                silinen = [s for s in eski_satirlar if s not in yeni_kume]
+                eklenen = [s for s in yeni_satirlar if s not in eski_kume]
+                _loglar.append(
+                    _log_kaydi(
+                        kullanici,
+                        "admin",
+                        "ADMİN NOT DÜZENLEDİ",
+                        kart.get("talep_no") or "",
+                        kart.get("stok_no") or "",
+                        detay=(f"ID={kart['id']} · {len(silinen)} satır silindi, {len(eklenen)} satır eklendi"
+                               + ("\nSilinen:\n" + "\n".join(silinen) if silinen else "")
+                               + ("\nEklenen:\n" + "\n".join(eklenen) if eklenen else "")),
+                    )
+                )
             return kart_gorunumu(kart)
 
         return _atomik_kart_islemi(islem)
@@ -2120,6 +2233,7 @@ def yedekten_geri_yukle(yedek_adi, kullanici):
             _kartlar = eski_kartlar
             _loglar = eski_loglar
             raise
+        _log_arsivle_gerekirse()
 
         return {
             "kart": len(_kartlar),
@@ -2234,11 +2348,18 @@ def _uygulamada_ilerletildi_mi(kart):
 
     Import zaman damgası yazmaz; başlama/teslim zamanı yalnız uygulamadaki
     işlemlerle (dizgiye al, teslim et, admin düzenleme) oluşur.
+
+    Excel'den DİZGİDE gelmiş kartta başlama zamanı yoktur; operatör yine de adet
+    girmiş olabilir. Tamamlanan adet > 0 ve son işlemi yapan Excel değilse (import
+    operatör alanına yalnız "Excel" yazar) ilerleme uygulamadadır; eski bir Excel
+    TESLİM'inden kalan adet bu sayılmaz.
     """
     if kart.get("durum") == TESLIM_EDILDI:
         return bool(kart.get("teslim_zamani"))
     if kart.get("durum") == DIZGIDE:
-        return bool(kart.get("baslama_zamani"))
+        operatorde_adet = (_sayi(kart.get("tamamlanan_adet"), 0) > 0
+                           and _temiz_metin(kart.get("operator")) not in ("", "Excel"))
+        return bool(kart.get("baslama_zamani")) or operatorde_adet
     return False
 
 
@@ -2310,6 +2431,7 @@ def excel_import_uygula(dosya_adi, kullanici, satirlar, uyari_sayisi=0,
             )
             pasife_listesi = []
             ayrilanlar = {}
+            geri_baglananlar = set()
             sifirla = {_sayi(kart_id, -1) for kart_id in (tamamlanan_sifirla or ())}
             sifirlanabilir = set()
             sifirlanabilir_olasi = set()
@@ -2348,6 +2470,28 @@ def excel_import_uygula(dosya_adi, kullanici, satirlar, uyari_sayisi=0,
                                   anahtar=ayrik_anahtar, source_active=0, guncelleme=simdi())
                     del mevcut_harita[anahtar]
                     mevcut = None
+
+                if mevcut is None:
+                    # NO önceki bir yüklemede başka talebe verilip ayrıldıysa ve şimdi eski
+                    # talebine döndüyse (ör. Talep NO yazım hatası düzeltildi) ayrılmış kart
+                    # notları, operatörü ve iş akışıyla geri bağlanır; yeni kart açılmaz.
+                    # Birden fazla aday varsa tahmin yapılmaz, eskisi gibi yeni kart açılır.
+                    onek = f"{satir['source_row_id']}~"
+                    adaylar = [k for k in _kartlar
+                               if k.get("kaynak") == "EXCEL" and k.get("source_active", 1) == 0
+                               and k.get("source_sheet") == satir["source_sheet"]
+                               and str(k.get("source_row_id") or "").startswith(onek)
+                               and _temiz_metin(k.get("talep_no")) == satir["talep_no"]]
+                    if len(adaylar) == 1:
+                        mevcut = adaylar[0]
+                        geri_baglananlar.add(mevcut["id"])
+                        _loglar.append(_log_kaydi(
+                            kullanici, "admin", "EXCEL NO ESKİ TALEBE DÖNDÜ", mevcut["talep_no"], mevcut["stok_no"],
+                            detay=(f"ID={mevcut['id']} {mevcut['source_row_id']} -> {anahtar}: ayrılmış kart "
+                                   "notları ve iş akışıyla geri bağlandı"),
+                        ))
+                        mevcut.update(source_row_id=satir["source_row_id"], source_key=anahtar, anahtar=anahtar)
+                        mevcut_harita[anahtar] = mevcut
 
                 if mevcut:
                     onceki = copy.deepcopy(mevcut)
@@ -2424,10 +2568,15 @@ def excel_import_uygula(dosya_adi, kullanici, satirlar, uyari_sayisi=0,
                     # değiştiğinde eski zaman damgası onu geri getirmemeli.
                     if onceki.get("gerceklesen_teslim") != mevcut.get("gerceklesen_teslim"):
                         mevcut["teslim_zamani"] = None
-                    if (gerileme and etkin_durum == onceki_durum == TESLIM_EDILDI
-                            and not satir.get("gerceklesen_teslim")):
-                        # Uygulamadaki teslim korunuyor: Excel'de henüz olmayan teslim
-                        # tarihi ve zamanı silinmesin.
+                    if (etkin_durum == onceki_durum == TESLIM_EDILDI
+                            and not satir.get("gerceklesen_teslim")
+                            and (gerileme or onceki.get("teslim_zamani"))):
+                        # Kart teslim edilmiş kalıyor ve Excel'in tarih hücresi boş: boş
+                        # hücre "tarih bilinmiyor" demektir, bilinen tarihi silmez. İki yol:
+                        # admin kararla uygulamadaki teslimi korudu, ya da Excel TESLİM'e
+                        # yetişti ama tarihi yazılmadı ve teslim uygulamada kaydedilmişti
+                        # (teslim_zamani yalnız Teslim Et / admin düzenlemesiyle oluşur).
+                        # Excel bir tarih yazarsa o tarih geçerli olmaya devam eder.
                         mevcut.update(gerceklesen_teslim=onceki.get("gerceklesen_teslim"),
                                       teslim_zamani=onceki.get("teslim_zamani"))
                     if etkin_durum is None:
@@ -2624,6 +2773,7 @@ def excel_import_uygula(dosya_adi, kullanici, satirlar, uyari_sayisi=0,
                                 "sira", "talep_sahibi", "toplam_adet", "durum", "excel_durum",
                                 "plan_baslama", "plan_teslim", "gerceklesen_teslim")},
                             "yerine": ayrilanlar.get(kart["id"]),
+                            "geri_baglandi": kart["id"] in geri_baglananlar,
                             "tamamlanan_adet": kart.get("tamamlanan_adet"),
                             "sifirlanabilir": kart["id"] in sifirlanabilir,
                             "gerileme": gerilemeler.get(kart["id"]),
@@ -2634,7 +2784,7 @@ def excel_import_uygula(dosya_adi, kullanici, satirlar, uyari_sayisi=0,
                                    if k.get("kaynak") == "EXCEL" and k.get("source_active", 1) == 1)
                 return {"surum": onceki_surum, "satir": len(satirlar), "yeni": yeni,
                         "guncellenen": guncellenen, "degismeyen": degismeyen,
-                        "ayrilan": len(ayrilanlar),
+                        "ayrilan": len(ayrilanlar), "geri_baglanan": len(geri_baglananlar),
                         "sifirlanabilir": sorted(sifirlanabilir | sifirlanabilir_olasi),
                         "not_temizlenebilir": sorted(not_temizlenebilir),
                         "gerileme": _karar_sayisi(gerilemeler, "geride"),
@@ -2665,6 +2815,7 @@ def excel_import_uygula(dosya_adi, kullanici, satirlar, uyari_sayisi=0,
                         f"{degismeyen} değişmedi · "
                         f"{workflow_korundu} workflow korundu · {durum_iyilesen} durum Excel'den değişti · "
                         f"{pasife_alinan} kaynakta yok · {len(ayrilanlar)} NO başka talebe verildi · "
+                        f"{len(geri_baglananlar)} ayrılmış kart eski talebine geri bağlandı · "
                         f"{sifirlanan} kartın tamamlanan adedi admin seçimiyle sıfırlandı · "
                         f"{notu_temizlenen} kartın notları admin seçimiyle temizlendi · "
                         f"{_karar_sayisi(gerilemeler, 'geride')} kartta Excel geride "
@@ -2685,6 +2836,8 @@ def excel_import_uygula(dosya_adi, kullanici, satirlar, uyari_sayisi=0,
                     (YUKLEME_DOSYA, YUKLEME_ALANLARI, _yuklemeler, "Yüklemeler"),
                 ]
             )
+            # Hata fırlatmaz; import yazıldıktan sonraki bakım adımıdır.
+            _log_arsivle_gerekirse()
 
             return {
                 "satir": len(satirlar),
@@ -2692,6 +2845,7 @@ def excel_import_uygula(dosya_adi, kullanici, satirlar, uyari_sayisi=0,
                 "guncellenen": guncellenen,
                 "degismeyen": degismeyen,
                 "ayrilan": len(ayrilanlar),
+                "geri_baglanan": len(geri_baglananlar),
                 "sifirlanan": sifirlanan,
                 "notu_temizlenen": notu_temizlenen,
                 "gerileme": _karar_sayisi(gerilemeler, "geride"),

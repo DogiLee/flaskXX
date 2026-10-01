@@ -447,7 +447,8 @@ class GercekExcelTests(unittest.TestCase):
         self.assertIn('44 yeni kartın listesini göster', html)
         self.assertEqual(depo._kartlar, [])                     # önizleme kayıt değiştirmez
         with self.snapshot_yamasi():
-            yanit = client.post('/yonetim/yukle-onay', data={'_csrf_token': 'test-token'})
+            yanit = client.post('/yonetim/yukle-onay', data={'_csrf_token': 'test-token',
+                                                             'onizleme_token': ui.onizleme_token(client)})
         self.assertEqual(yanit.status_code, 302)
         with client.session_transaction() as oturum:
             mesaj = oturum['_flashes'][-1][1]

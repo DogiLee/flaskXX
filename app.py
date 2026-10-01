@@ -924,6 +924,20 @@ def api_veriler():
 # Operatör API'leri
 # ---------------------------------------------------------------------------
 
+ISLEM_YAPAN_SINIRI = 80
+
+
+def _islem_yapan_adi(veri):
+    """Operatör hesapları paylaşımlı: işlemi yapan kişinin adı karta ve loga yazılır.
+
+    Arayüz adı zorunlu tutar; ad gönderilmeyen API çağrılarında hesabın adı kullanılır.
+    """
+    isim = str(veri.get("isim") or "").strip()
+    if len(isim) > ISLEM_YAPAN_SINIRI:
+        raise ValueError(f"İşlemi yapan adı en fazla {ISLEM_YAPAN_SINIRI} karakter olabilir.")
+    return isim or session.get("ad") or session["kullanici"]
+
+
 def _api_kart_islemi(fn):
     try:
         return fn()
@@ -931,6 +945,8 @@ def _api_kart_islemi(fn):
         return jsonify(hata=str(hata)), 404
     except depo.MalzemeBekliyorHatasi as hata:
         return jsonify(hata=str(hata), malzeme_bekliyor_onay_gerekli=True), 409
+    except depo.TekrarKartOnayiGerekli as hata:
+        return jsonify(hata=str(hata), tekrar_onayi_gerekli=True, mevcut=hata.kartlar), 409
     except depo.IsKuralHatasi as hata:
         return jsonify(hata=str(hata)), 409
     except (depo.VeriDogrulamaHatasi, ValueError) as hata:
@@ -960,7 +976,7 @@ def api_basla():
             operator_tipi=session.get("operator_tipi"),
             aciklama=(veri.get("not") or "").strip(),
             malzeme_onayi=bool(veri.get("malzeme_onayi")),
-            isim=(veri.get("isim") or session.get("ad") or session["kullanici"]),
+            isim=_islem_yapan_adi(veri),
         )
         return jsonify(tamam=True, mesaj="Kart DİZGİDE durumuna alındı.", kart=kart)
 
@@ -981,7 +997,7 @@ def api_bitir():
             rol=session["rol"],
             operator_tipi=session.get("operator_tipi"),
             aciklama=(veri.get("not") or "").strip(),
-            isim=(veri.get("isim") or session.get("ad") or session["kullanici"]),
+            isim=_islem_yapan_adi(veri),
         )
         return jsonify(
             tamam=True,
@@ -1009,7 +1025,7 @@ def api_teslim_et():
             rol=session["rol"],
             operator_tipi=session.get("operator_tipi"),
             aciklama=(veri.get("not") or "").strip(),
-            isim=(veri.get("isim") or session.get("ad") or session["kullanici"]),
+            isim=_islem_yapan_adi(veri),
         )
         return jsonify(tamam=True, mesaj="Kart TESLİM EDİLDİ olarak kaydedildi.", kart=kart)
 
@@ -1028,9 +1044,7 @@ def api_not():
             aciklama=(veri.get("not") or "").strip(),
             kullanici=session["kullanici"],
             rol=session["rol"],
-            isim=(veri.get("isim") or "").strip()
-            or session.get("ad")
-            or session["kullanici"],
+            isim=_islem_yapan_adi(veri),
         )
         return jsonify(tamam=True, kart=kart)
 
@@ -1064,6 +1078,7 @@ def api_kart_ekle():
             dizgi_tipi=veri.get("dizgi_tipi"),
             dizgi_sorumlusu=veri.get("dizgi_sorumlusu"),
             kullanici=session["kullanici"],
+            tekrar_onayi=veri.get("tekrar_onayi") is True,
         )
         return jsonify(tamam=True, kart=kart), 201
 
@@ -1199,6 +1214,9 @@ def _import_mesaji(sonuc):
     if sonuc.get("ayrilan"):
         mesaj += (f" · {sonuc['ayrilan']} kartın NO'su Excel'de başka talebe verilmiş: eski kart geçmişiyle "
                   "ayrıldı, yeni talep için kart açıldı.")
+    if sonuc.get("geri_baglanan"):
+        mesaj += (f" · {sonuc['geri_baglanan']} kartın NO'su eski talebine döndü: ayrılmış kart notları ve "
+                  "iş akışıyla geri bağlandı.")
     if sonuc.get("elle_dizgi_satir"):
         mesaj += f" · {sonuc['elle_dizgi_satir']} kart ELDE DİZGİ sayfasından."
     if sonuc.get("eum_dizgi_satir"):
@@ -1264,11 +1282,15 @@ def yukle():
             sonuc = ex.excelden_aktar(yol, session["kullanici"], onizleme=True)
             with open(yol, "rb") as kaynak:
                 dosya_hash = hashlib.file_digest(kaynak, "sha256").hexdigest()
-            session["import_onizleme"] = {"dosya": kayit_adi, "hash": dosya_hash,
+            # Oturumda tek önizleme tutulur; token onay formunu bu önizlemeye bağlar. Başka
+            # sekmede yeni bir dosya önizlenirse eski sayfanın onayı o dosyayı uygulayamaz.
+            token = secrets.token_urlsafe(16)
+            session["import_onizleme"] = {"dosya": kayit_adi, "hash": dosya_hash, "token": token,
                 "surum": sonuc["surum"], "kaynak_surum": sonuc["kaynak_surum"],
                 "sifirlanabilir": sonuc.get("sifirlanabilir", []),
                 "not_temizlenebilir": sonuc.get("not_temizlenebilir", [])}
-            return render_template("import_onizleme.html", sonuc=sonuc, dosya=guvenli_ad)
+            return render_template("import_onizleme.html", sonuc=sonuc, dosya=guvenli_ad,
+                                   onizleme_token=token)
         sonuc = ex.excelden_aktar(yol, session["kullanici"])
         mesaj = _import_mesaji(sonuc)
         flash(mesaj, "basari")
@@ -1293,7 +1315,18 @@ def yukle():
 @yetki("admin")
 @csrf_koru
 def yukle_onay():
-    bekleyen = session.pop("import_onizleme", None)
+    bekleyen = session.get("import_onizleme")
+    gelen_token = request.form.get("onizleme_token") or ""
+    if bekleyen and not secrets.compare_digest(str(bekleyen.get("token") or ""), gelen_token):
+        # Bu sayfa oturumdaki son önizlemeye ait değil (ör. başka sekmede başka dosya
+        # önizlendi). Diğer sekmenin önizlemesi tüketilmez; o sekmeden onaylanabilir.
+        mesaj = ("Bu önizleme sayfası güncel değil: bu oturumda daha sonra başka bir dosya önizlendi "
+                 "(ör. başka bir sekmede). Hiçbir kayıt değişmedi. Son önizlemenin sekmesinden onaylayın "
+                 "veya dosyayı yeniden seçin.")
+        app.logger.warning("Import onayı reddedildi: önizleme token'ı eşleşmedi")
+        return render_template("import_onizleme.html", hata=mesaj, hata_turu="onay",
+                               sorunlar=_sorunlari_ayir([mesaj]), dosya=""), 409
+    session.pop("import_onizleme", None)
     try:
         if not bekleyen or not bekleyen.get("kaynak_surum"):
             raise depo.IsKuralHatasi("Önizleme bulunamadı veya daha önce kullanıldı. Dosyayı yeniden seçin.")

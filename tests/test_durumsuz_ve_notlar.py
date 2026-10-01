@@ -187,7 +187,9 @@ class DurumsuzVeNotTests(unittest.TestCase):
         # Önizlemede sunulmayan kartın notu seçilemez; hiçbir şey değişmez.
         once = copy.deepcopy(depo._kartlar)
         with patch.object(ex, 'excel_deger_snapshot_olustur', snapshot):
-            yanit = client.post('/yonetim/yukle-onay', data={'_csrf_token': 'test-token', 'not_temizle': [str(k[2])],
+            yanit = client.post('/yonetim/yukle-onay', data={'_csrf_token': 'test-token',
+                                                             'onizleme_token': ui.onizleme_token(client),
+                                                             'not_temizle': [str(k[2])],
                                                              **{f'gerileme_{i}': d for i, d in secimler.items()}})
         self.assertEqual(yanit.status_code, 409)
         self.assertIn('Notları temizlenmek üzere önizlemede sunulmayan kart seçildi', yanit.get_data(as_text=True))
@@ -195,7 +197,9 @@ class DurumsuzVeNotTests(unittest.TestCase):
 
         onizle()
         with patch.object(ex, 'excel_deger_snapshot_olustur', snapshot):
-            yanit = client.post('/yonetim/yukle-onay', data={'_csrf_token': 'test-token', 'not_temizle': [str(k[5])],
+            yanit = client.post('/yonetim/yukle-onay', data={'_csrf_token': 'test-token',
+                                                             'onizleme_token': ui.onizleme_token(client),
+                                                             'not_temizle': [str(k[5])],
                                                              **{f'gerileme_{i}': d for i, d in secimler.items()}})
         self.assertEqual(yanit.status_code, 302)
         with client.session_transaction() as oturum:
